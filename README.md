@@ -53,55 +53,6 @@ opencode-enhancer plugins update
 
 Other registry plugins are still updated with `@latest`.
 
-## Publishing
-
-### GitHub Actions
-
-Configure npm Trusted Publishing for this package:
-
-1. Go to `npmjs.com` -> package `opencode-enhancer` -> `Settings`
-2. Open `Trusted Publisher`
-3. Add a GitHub Actions publisher for:
-4. Organization or user: `rokartur`
-5. Repository: `opencode-enhancer`
-6. Workflow filename: `publish.yml`
-
-The workflow in `.github/workflows/publish.yml` will then publish automatically when you push a semver tag like `v1.0.2`.
-
-It will:
-
-- install dependencies
-- verify that the git tag matches `package.json` version
-- run `npm run release:check`
-- run `npm publish --access public`
-
-With Trusted Publishing enabled, no `NPM_TOKEN` secret or OTP is needed in GitHub Actions.
-
-### Manual Local Publish
-
-For a normal local registry publish flow:
-
-```bash
-npm run release:check
-npm publish
-```
-
-Then users can install the CLI with `npm install -g opencode-enhancer` and the plugin with `opencode plugin "opencode-enhancer@latest" --global`.
-
-### Release Flow
-
-Recommended release flow with GitHub Actions:
-
-```bash
-npm version patch
-git push origin main
-git push origin --tags
-```
-
-You can also use `npm version minor` or `npm version major`.
-
-The package is published under the unscoped name `opencode-enhancer`.
-
 ## CLI
 
 ```bash
