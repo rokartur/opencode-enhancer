@@ -13,7 +13,25 @@ OpenCode enhancer for Codex accounts, usage tracking, plugin updates, and future
 
 ## Install
 
-Recommended for shared installs: use a release tag instead of `main`.
+### Registry Install
+
+Recommended stable setup once the package is published to a registry.
+
+Install the OpenCode plugin:
+
+```bash
+opencode plugin opencode-enhancer@latest --global
+```
+
+Install the global CLI:
+
+```bash
+npm install -g opencode-enhancer
+```
+
+### GitHub Install
+
+Use this only as a fallback before registry publish or for testing unpublished changes.
 
 ```bash
 opencode plugin "git+https://github.com/rokartur/opencode-enhancer.git#semver:*" --global
@@ -26,10 +44,10 @@ Installing the plugin into OpenCode does not automatically add `opencode-enhance
 If you also want the CLI command available globally, install it as a global Node package:
 
 ```bash
-npm install -g "git+https://github.com/rokartur/opencode-enhancer.git#semver:*"
+npm install -g "https://codeload.github.com/rokartur/opencode-enhancer/tar.gz/refs/tags/v1.0.1"
 ```
 
-`bun install -g` does not currently resolve `#semver:*` for GitHub git dependencies correctly, so use `npm` for the moving-latest install flow or pin an explicit tag with Bun.
+`bun install -g` does not currently resolve `#semver:*` for GitHub git dependencies correctly, so registry install is preferred for the CLI. If you need GitHub-only installation, use an explicit tag tarball with `npm`.
 
 Then the command will be available globally:
 
@@ -38,6 +56,17 @@ opencode-enhancer --help
 ```
 
 ## Updates
+
+### Registry
+
+If `opencode-enhancer` is published to a registry, use normal registry updates:
+
+```bash
+opencode plugin opencode-enhancer@latest --global --force
+npm install -g opencode-enhancer@latest
+```
+
+### GitHub
 
 If `opencode-enhancer` is installed from GitHub, `plugins update` will detect it and reinstall it using `#semver:*`, which resolves to the newest semver tag.
 
@@ -49,6 +78,49 @@ opencode-enhancer plugins update
 ```
 
 Other registry plugins are still updated with `@latest`.
+
+## Publishing
+
+### GitHub Actions
+
+Create a repository secret named `NPM_TOKEN` in GitHub:
+
+1. GitHub repository -> `Settings` -> `Secrets and variables` -> `Actions`
+2. `New repository secret`
+3. Name: `NPM_TOKEN`
+4. Value: your npm automation/access token
+
+The workflow in `.github/workflows/publish.yml` will publish automatically when you push a semver tag like `v1.0.2`.
+
+It will:
+
+- install dependencies
+- verify that the git tag matches `package.json` version
+- run `npm run release:check`
+- run `npm publish --access public --provenance`
+
+### Manual Local Publish
+
+For a normal local registry publish flow:
+
+```bash
+npm run release:check
+npm publish
+```
+
+Then users can install the CLI with `npm install -g opencode-enhancer` and the plugin with `opencode plugin opencode-enhancer@latest --global`.
+
+### Release Flow
+
+Recommended release flow with GitHub Actions:
+
+```bash
+npm version patch
+git push origin main
+git push origin --tags
+```
+
+You can also use `npm version minor` or `npm version major`.
 
 ## CLI
 

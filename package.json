@@ -1,6 +1,6 @@
 {
   "name": "opencode-enhancer",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "OpenCode enhancer for Codex accounts, usage tracking, plugin updates, and automation",
   "type": "module",
   "main": "./dist/index.js",
@@ -12,6 +12,7 @@
     "build": "tsc",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
+    "release:check": "npm run lint && npm pack --dry-run",
     "prepack": "npm run build"
   },
   "dependencies": {
