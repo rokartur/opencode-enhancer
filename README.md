@@ -20,39 +20,13 @@ Recommended stable setup once the package is published to a registry.
 Install the OpenCode plugin:
 
 ```bash
-opencode plugin opencode-enhancer@latest --global
+opencode plugin "@rokartur/opencode-enhancer@latest" --global
 ```
 
 Install the global CLI:
 
 ```bash
-npm install -g opencode-enhancer
-```
-
-### GitHub Install
-
-Use this only as a fallback before registry publish or for testing unpublished changes.
-
-```bash
-opencode plugin "git+https://github.com/rokartur/opencode-enhancer.git#semver:*" --global
-```
-
-### Global CLI
-
-Installing the plugin into OpenCode does not automatically add `opencode-enhancer` to your system `PATH`.
-
-If you also want the CLI command available globally, install it as a global Node package:
-
-```bash
-npm install -g "https://codeload.github.com/rokartur/opencode-enhancer/tar.gz/refs/tags/v1.0.1"
-```
-
-`bun install -g` does not currently resolve `#semver:*` for GitHub git dependencies correctly, so registry install is preferred for the CLI. If you need GitHub-only installation, use an explicit tag tarball with `npm`.
-
-Then the command will be available globally:
-
-```bash
-opencode-enhancer --help
+npm install -g @rokartur/opencode-enhancer
 ```
 
 ## Updates
@@ -62,8 +36,8 @@ opencode-enhancer --help
 If `opencode-enhancer` is published to a registry, use normal registry updates:
 
 ```bash
-opencode plugin opencode-enhancer@latest --global --force
-npm install -g opencode-enhancer@latest
+opencode plugin "@rokartur/opencode-enhancer@latest" --global --force
+npm install -g @rokartur/opencode-enhancer@latest
 ```
 
 ### GitHub
@@ -108,7 +82,7 @@ npm run release:check
 npm publish
 ```
 
-Then users can install the CLI with `npm install -g opencode-enhancer` and the plugin with `opencode plugin opencode-enhancer@latest --global`.
+Then users can install the CLI with `npm install -g @rokartur/opencode-enhancer` and the plugin with `opencode plugin "@rokartur/opencode-enhancer@latest" --global`.
 
 ### Release Flow
 
@@ -121,6 +95,8 @@ git push origin --tags
 ```
 
 You can also use `npm version minor` or `npm version major`.
+
+The package is published under the scoped name `@rokartur/opencode-enhancer`, which avoids ownership issues with the unscoped `opencode-enhancer` name.
 
 ## CLI
 
