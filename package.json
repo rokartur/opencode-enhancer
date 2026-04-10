@@ -1,0 +1,54 @@
+{
+  "name": "opencode-enhancer",
+  "version": "1.0.0",
+  "description": "OpenCode enhancer for Codex accounts, usage tracking, plugin updates, and automation",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "opencode-enhancer": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "lint": "tsc --noEmit",
+    "prepare": "npm run build"
+  },
+  "dependencies": {
+    "@openauthjs/openauth": "^0.4.3"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": "^1.0.150"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "^1.4.3",
+    "@opencode-ai/sdk": "^1.4.3",
+    "@types/node": "^25.5.2",
+    "typescript": "^6.0.2"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rokartur/opencode-enhancer"
+  },
+  "homepage": "https://github.com/rokartur/opencode-enhancer",
+  "bugs": {
+    "url": "https://github.com/rokartur/opencode-enhancer/issues"
+  },
+  "keywords": [
+    "opencode",
+    "openai",
+    "codex",
+    "oauth",
+    "usage",
+    "plugins",
+    "automation"
+  ],
+  "author": "rokartur",
+  "license": "MIT"
+}

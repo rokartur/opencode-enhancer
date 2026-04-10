@@ -1,0 +1,14 @@
+node_modules/
+.DS_Store
+*.log
+.npmrc
+node
+.env
+.env.*
+!.env.example
+dist
+
+# Auto-login
+auto-login/credentials.json
+auto-login/debug_*.png
+auto-login/__pycache__/
