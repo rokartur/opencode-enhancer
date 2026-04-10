@@ -11,16 +11,43 @@ const AUTH_KEY = 'zai-coding-plan'
 
 interface QuotaLimit {
   type: string
+  unit?: number
+  number?: number
   percentage: number
+  usage?: number
   currentValue: number
-  total: number
+  remaining?: number
+  total?: number
   nextResetTime: string
 }
 
 interface ZaiQuotaResponse {
   data: {
     limits: QuotaLimit[]
+    level?: string
   }
+}
+
+function getZaiPlan(level: string | undefined): string | undefined {
+  if (typeof level !== 'string') return undefined
+  const trimmed = level.trim()
+  return trimmed || undefined
+}
+
+function getZaiWindowLabel(limit: QuotaLimit): string {
+  if (limit.type === 'TOKENS_LIMIT' && limit.unit === 3 && limit.number === 5) {
+    return '5h'
+  }
+
+  if (limit.type === 'TOKENS_LIMIT' && limit.unit === 6) {
+    return 'weekly'
+  }
+
+  if (limit.type === 'TIME_LIMIT') {
+    return 'time'
+  }
+
+  return limit.type || 'quota'
 }
 
 export const zaiProvider: UsageProvider = {
@@ -71,7 +98,7 @@ export const zaiProvider: UsageProvider = {
         windows.push({
           utilization,
           resetsAt: limit.nextResetTime ? new Date(limit.nextResetTime).getTime() : undefined,
-          label: limit.type || 'quota',
+          label: getZaiWindowLabel(limit),
         })
         maxUtilization = Math.max(maxUtilization, utilization)
       }
@@ -81,6 +108,7 @@ export const zaiProvider: UsageProvider = {
         providerName: this.name,
         billingType: this.billingType,
         status: 'ok',
+        plan: getZaiPlan(json.data?.level),
         usage: {
           type: 'quotaBased',
           utilization: maxUtilization,

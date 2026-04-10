@@ -19,6 +19,15 @@ interface QuotaResponse {
   buckets: QuotaBucket[]
 }
 
+function inferGeminiPlan(modelId: string): string | undefined {
+  const normalized = modelId.trim().toLowerCase()
+  if (!normalized) return undefined
+  if (normalized.includes('pro')) return 'Pro'
+  if (normalized.includes('lite')) return 'Lite'
+  if (normalized.includes('flash')) return 'Flash'
+  return undefined
+}
+
 async function refreshGoogleAccessToken(
   clientId: string,
   clientSecret: string,
@@ -125,6 +134,7 @@ export const geminiProvider: UsageProvider = {
 
       const accounts: ProviderAccountResult[] = windows.map((window) => ({
         label: window.label,
+        plan: inferGeminiPlan(window.label),
         status: 'ok',
         usage: {
           type: 'quotaBased',

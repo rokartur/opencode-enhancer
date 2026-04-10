@@ -38,6 +38,7 @@ export const codexProvider: UsageProvider = {
           return {
             label: acc.alias,
             email: acc.email,
+            plan: acc.planType,
             status: 'error',
             error: 'Account disabled',
             usage: { type: 'quotaBased', utilization: 0, windows: [] },
@@ -49,6 +50,7 @@ export const codexProvider: UsageProvider = {
           return {
             label: acc.alias,
             email: acc.email,
+            plan: acc.planType,
             status: 'auth_expired',
             error: 'Auth invalid',
             usage: { type: 'quotaBased', utilization: 0, windows: [] },
@@ -62,6 +64,7 @@ export const codexProvider: UsageProvider = {
             return {
               label: acc.alias,
               email: acc.email,
+              plan: acc.planType,
               status: 'auth_expired',
               error: result.error,
               usage: { type: 'quotaBased', utilization: 0, windows: [] },
@@ -72,6 +75,7 @@ export const codexProvider: UsageProvider = {
             return {
               label: acc.alias,
               email: acc.email,
+              plan: acc.planType,
               status: 'error',
               error: result.error,
               usage: { type: 'quotaBased', utilization: 0, windows: [] },
@@ -112,6 +116,7 @@ export const codexProvider: UsageProvider = {
           return {
             label: acc.alias,
             email: acc.email,
+            plan: acc.planType,
             status: 'ok',
             usage: {
               type: 'quotaBased',
@@ -123,6 +128,7 @@ export const codexProvider: UsageProvider = {
           return {
             label: acc.alias,
             email: acc.email,
+            plan: acc.planType,
             status: 'error',
             error: `${err}`,
             usage: { type: 'quotaBased', utilization: 0, windows: [] },

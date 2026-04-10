@@ -5,6 +5,18 @@ import { getGeminiOAuthCreds } from './auth.js';
 import { fetchWithTimeout } from './types.js';
 const QUOTA_ENDPOINT = 'https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota';
 const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
+function inferGeminiPlan(modelId) {
+    const normalized = modelId.trim().toLowerCase();
+    if (!normalized)
+        return undefined;
+    if (normalized.includes('pro'))
+        return 'Pro';
+    if (normalized.includes('lite'))
+        return 'Lite';
+    if (normalized.includes('flash'))
+        return 'Flash';
+    return undefined;
+}
 async function refreshGoogleAccessToken(clientId, clientSecret, refreshToken) {
     try {
         const res = await fetchWithTimeout(TOKEN_ENDPOINT, {
@@ -95,6 +107,7 @@ export const geminiProvider = {
             }));
             const accounts = windows.map((window) => ({
                 label: window.label,
+                plan: inferGeminiPlan(window.label),
                 status: 'ok',
                 usage: {
                     type: 'quotaBased',

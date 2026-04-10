@@ -5,6 +5,24 @@ import { getApiKey, hasCredential } from './auth.js';
 import { fetchWithTimeout } from './types.js';
 const QUOTA_ENDPOINT = 'https://api.z.ai/api/monitor/usage/quota/limit';
 const AUTH_KEY = 'zai-coding-plan';
+function getZaiPlan(level) {
+    if (typeof level !== 'string')
+        return undefined;
+    const trimmed = level.trim();
+    return trimmed || undefined;
+}
+function getZaiWindowLabel(limit) {
+    if (limit.type === 'TOKENS_LIMIT' && limit.unit === 3 && limit.number === 5) {
+        return '5h';
+    }
+    if (limit.type === 'TOKENS_LIMIT' && limit.unit === 6) {
+        return 'weekly';
+    }
+    if (limit.type === 'TIME_LIMIT') {
+        return 'time';
+    }
+    return limit.type || 'quota';
+}
 export const zaiProvider = {
     id: 'zai',
     name: 'Z.AI',
@@ -47,7 +65,7 @@ export const zaiProvider = {
                 windows.push({
                     utilization,
                     resetsAt: limit.nextResetTime ? new Date(limit.nextResetTime).getTime() : undefined,
-                    label: limit.type || 'quota',
+                    label: getZaiWindowLabel(limit),
                 });
                 maxUtilization = Math.max(maxUtilization, utilization);
             }
@@ -56,6 +74,7 @@ export const zaiProvider = {
                 providerName: this.name,
                 billingType: this.billingType,
                 status: 'ok',
+                plan: getZaiPlan(json.data?.level),
                 usage: {
                     type: 'quotaBased',
                     utilization: maxUtilization,

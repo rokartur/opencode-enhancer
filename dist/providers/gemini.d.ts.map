@@ -1,1 +1,1 @@
-{"version":3,"file":"gemini.d.ts","sourceRoot":"","sources":["../../src/providers/gemini.ts"],"names":[],"mappings":"AAMA,OAAO,KAAK,EAAyC,aAAa,EAAe,MAAM,YAAY,CAAA;AAuCnG,eAAO,MAAM,cAAc,EAAE,aAqH5B,CAAA"}
+{"version":3,"file":"gemini.d.ts","sourceRoot":"","sources":["../../src/providers/gemini.ts"],"names":[],"mappings":"AAMA,OAAO,KAAK,EAAyC,aAAa,EAAe,MAAM,YAAY,CAAA;AAgDnG,eAAO,MAAM,cAAc,EAAE,aAsH5B,CAAA"}

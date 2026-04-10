@@ -5,6 +5,16 @@ import { getApiKey, hasCredential } from './auth.js';
 import { fetchWithTimeout } from './types.js';
 const ENDPOINT = 'https://api.opencode.ai/v1/credits';
 const AUTH_KEY = 'opencode';
+function buildOpenCodeError(provider, billingType, status, error) {
+    return {
+        providerId: provider.id,
+        providerName: provider.name,
+        billingType,
+        status,
+        error,
+        fetchedAt: Date.now(),
+    };
+}
 export const openCodeProvider = {
     id: 'opencode',
     name: 'OpenCode',
@@ -27,18 +37,21 @@ export const openCodeProvider = {
             const res = await fetchWithTimeout(ENDPOINT, {
                 headers: { Authorization: `Bearer ${apiKey}` },
             });
+            const body = await res.text();
             if (!res.ok) {
-                const text = await res.text().catch(() => '');
-                return {
-                    providerId: this.id,
-                    providerName: this.name,
-                    billingType: this.billingType,
-                    status: res.status === 401 || res.status === 403 ? 'auth_expired' : 'error',
-                    error: `HTTP ${res.status}: ${text.slice(0, 200)}`,
-                    fetchedAt: Date.now(),
-                };
+                return buildOpenCodeError(this, this.billingType, res.status === 401 || res.status === 403 ? 'auth_expired' : 'error', `HTTP ${res.status}: ${body.slice(0, 200)}`);
             }
-            const json = (await res.json());
+            let json;
+            try {
+                json = JSON.parse(body);
+            }
+            catch {
+                const contentType = res.headers.get('content-type') || 'unknown';
+                return buildOpenCodeError(this, this.billingType, 'error', `Unexpected OpenCode response (${res.status}, ${contentType}): ${body.slice(0, 200)}`);
+            }
+            if (!json?.data) {
+                return buildOpenCodeError(this, this.billingType, 'error', `Invalid OpenCode credits payload: ${body.slice(0, 200)}`);
+            }
             const { total_credits, used_credits, remaining_credits } = json.data;
             const utilization = total_credits > 0 ? (used_credits / total_credits) * 100 : 0;
             return {
