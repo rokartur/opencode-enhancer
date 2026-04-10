@@ -1,6 +1,6 @@
 {
   "name": "@rokartur/opencode-enhancer",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "OpenCode enhancer for Codex accounts, usage tracking, plugin updates, and automation",
   "type": "module",
   "main": "./dist/index.js",
