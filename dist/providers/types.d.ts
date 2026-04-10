@@ -36,6 +36,7 @@ export type ProviderUsage = QuotaBasedUsage | PayAsYouGoUsage;
 export interface ProviderAccountResult {
     label: string;
     email?: string;
+    plan?: string;
     usage: ProviderUsage;
     status: ProviderStatus;
     error?: string;
@@ -45,6 +46,7 @@ export interface ProviderResult {
     providerName: string;
     billingType: BillingType;
     status: ProviderStatus;
+    plan?: string;
     usage?: ProviderUsage;
     accounts?: ProviderAccountResult[];
     error?: string;

@@ -230,6 +230,7 @@ export const copilotProvider = {
                     providerName: this.name,
                     billingType: this.billingType,
                     status: noSub ? 'ok' : 'error',
+                    plan: planLabel,
                     usage: {
                         type: 'quotaBased',
                         utilization: 0,
@@ -239,6 +240,7 @@ export const copilotProvider = {
                         {
                             label: login,
                             email: login,
+                            plan: planLabel,
                             status: noSub ? 'ok' : 'error',
                             usage: { type: 'quotaBased', utilization: 0, windows: [] },
                             error: noSub ? undefined : copilotError,
@@ -252,6 +254,7 @@ export const copilotProvider = {
             const accountResult = {
                 label: login,
                 email: login,
+                plan: planLabel,
                 status: 'ok',
                 usage: {
                     type: 'quotaBased',
@@ -268,6 +271,7 @@ export const copilotProvider = {
                 providerName: mainLabel,
                 billingType: this.billingType,
                 status: 'ok',
+                plan: planLabel,
                 usage: {
                     type: 'quotaBased',
                     utilization: Math.round(utilization),

@@ -93,6 +93,15 @@ export const geminiProvider = {
                 resetsAt: b.resetTime ? new Date(b.resetTime).getTime() : undefined,
                 label: b.modelId || 'unknown',
             }));
+            const accounts = windows.map((window) => ({
+                label: window.label,
+                status: 'ok',
+                usage: {
+                    type: 'quotaBased',
+                    utilization: window.utilization,
+                    windows: [window],
+                },
+            }));
             // Overall utilization: highest used model
             const primaryUtil = Math.max(...windows.map((w) => w.utilization));
             return {
@@ -105,6 +114,7 @@ export const geminiProvider = {
                     utilization: primaryUtil,
                     windows,
                 },
+                accounts,
                 fetchedAt: Date.now(),
             };
         }

@@ -4,7 +4,7 @@
 
 import { getGeminiOAuthCreds } from './auth.js'
 import { fetchWithTimeout } from './types.js'
-import type { ProviderResult, UsageProvider, UsageWindow } from './types.js'
+import type { ProviderAccountResult, ProviderResult, UsageProvider, UsageWindow } from './types.js'
 
 const QUOTA_ENDPOINT = 'https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota'
 const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token'
@@ -123,6 +123,16 @@ export const geminiProvider: UsageProvider = {
         label: b.modelId || 'unknown',
       }))
 
+      const accounts: ProviderAccountResult[] = windows.map((window) => ({
+        label: window.label,
+        status: 'ok',
+        usage: {
+          type: 'quotaBased',
+          utilization: window.utilization,
+          windows: [window],
+        },
+      }))
+
       // Overall utilization: highest used model
       const primaryUtil = Math.max(...windows.map((w) => w.utilization))
 
@@ -136,6 +146,7 @@ export const geminiProvider: UsageProvider = {
           utilization: primaryUtil,
           windows,
         },
+        accounts,
         fetchedAt: Date.now(),
       }
     } catch (err) {
