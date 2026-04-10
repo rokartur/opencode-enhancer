@@ -30,9 +30,17 @@ function isDebugEnabled(): boolean {
 }
 
 export function getMinRemaining(rateLimits?: AccountRateLimits): number {
-  const fiveHour = rateLimits?.fiveHour?.remaining
-  const weekly = rateLimits?.weekly?.remaining
-  const values = [fiveHour, weekly].filter((v): v is number => typeof v === 'number')
+  const now = Date.now()
+  const windows = [rateLimits?.fiveHour, rateLimits?.weekly]
+  const values: number[] = []
+  for (const w of windows) {
+    if (typeof w?.remaining !== 'number') continue
+    // If the rate limit window has reset (resetAt is in the past),
+    // the stored remaining value is stale — skip it so the account
+    // is treated as having unknown (Infinity) remaining capacity.
+    if (typeof w.resetAt === 'number' && w.resetAt < now) continue
+    values.push(w.remaining)
+  }
   if (values.length === 0) return Infinity
   return Math.min(...values)
 }
