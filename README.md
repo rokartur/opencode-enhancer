@@ -20,13 +20,13 @@ Recommended stable setup once the package is published to a registry.
 Install the OpenCode plugin:
 
 ```bash
-opencode plugin "@rokartur/opencode-enhancer@latest" --global
+opencode plugin "opencode-enhancer@latest" --global
 ```
 
 Install the global CLI:
 
 ```bash
-npm install -g @rokartur/opencode-enhancer
+npm install -g opencode-enhancer
 ```
 
 ## Updates
@@ -36,8 +36,8 @@ npm install -g @rokartur/opencode-enhancer
 If `opencode-enhancer` is published to a registry, use normal registry updates:
 
 ```bash
-opencode plugin "@rokartur/opencode-enhancer@latest" --global --force
-npm install -g @rokartur/opencode-enhancer@latest
+opencode plugin "opencode-enhancer@latest" --global --force
+npm install -g opencode-enhancer@latest
 ```
 
 ### GitHub
@@ -57,21 +57,25 @@ Other registry plugins are still updated with `@latest`.
 
 ### GitHub Actions
 
-Create a repository secret named `NPM_TOKEN` in GitHub:
+Configure npm Trusted Publishing for this package:
 
-1. GitHub repository -> `Settings` -> `Secrets and variables` -> `Actions`
-2. `New repository secret`
-3. Name: `NPM_TOKEN`
-4. Value: your npm automation/access token
+1. Go to `npmjs.com` -> package `opencode-enhancer` -> `Settings`
+2. Open `Trusted Publisher`
+3. Add a GitHub Actions publisher for:
+4. Organization or user: `rokartur`
+5. Repository: `opencode-enhancer`
+6. Workflow filename: `publish.yml`
 
-The workflow in `.github/workflows/publish.yml` will publish automatically when you push a semver tag like `v1.0.2`.
+The workflow in `.github/workflows/publish.yml` will then publish automatically when you push a semver tag like `v1.0.2`.
 
 It will:
 
 - install dependencies
 - verify that the git tag matches `package.json` version
 - run `npm run release:check`
-- run `npm publish --access public --provenance`
+- run `npm publish --access public`
+
+With Trusted Publishing enabled, no `NPM_TOKEN` secret or OTP is needed in GitHub Actions.
 
 ### Manual Local Publish
 
@@ -82,7 +86,7 @@ npm run release:check
 npm publish
 ```
 
-Then users can install the CLI with `npm install -g @rokartur/opencode-enhancer` and the plugin with `opencode plugin "@rokartur/opencode-enhancer@latest" --global`.
+Then users can install the CLI with `npm install -g opencode-enhancer` and the plugin with `opencode plugin "opencode-enhancer@latest" --global`.
 
 ### Release Flow
 
@@ -96,7 +100,7 @@ git push origin --tags
 
 You can also use `npm version minor` or `npm version major`.
 
-The package is published under the scoped name `@rokartur/opencode-enhancer`, which avoids ownership issues with the unscoped `opencode-enhancer` name.
+The package is published under the unscoped name `opencode-enhancer`.
 
 ## CLI
 
