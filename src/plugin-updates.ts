@@ -4,12 +4,22 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 type PluginSourceKind = 'registry' | 'local' | 'remote' | 'unknown'
+const SELF_GITHUB_OWNER = 'rokartur'
+const SELF_GITHUB_REPO = 'opencode-enhancer'
+const SELF_GITHUB_GIT_URL = `git+https://github.com/${SELF_GITHUB_OWNER}/${SELF_GITHUB_REPO}.git`
+const SELF_GITHUB_SEMVER_REF = 'semver:*'
+const SELF_GITHUB_SEMVER_SPEC = `${SELF_GITHUB_GIT_URL}#${SELF_GITHUB_SEMVER_REF}`
+const GITHUB_TAGS_API_URL = `https://api.github.com/repos/${SELF_GITHUB_OWNER}/${SELF_GITHUB_REPO}/tags?per_page=100`
 
 interface ParsedPluginSpec {
   raw: string
   moduleName?: string
   versionSpec?: string
   kind: PluginSourceKind
+  remoteUrl?: string
+  ref?: string
+  githubOwner?: string
+  githubRepo?: string
 }
 
 export interface PluginUpdateOptions {
@@ -22,6 +32,10 @@ interface PluginUpdateResult {
   plugin: string
   action: 'updated' | 'skipped'
   reason?: string
+}
+
+interface GithubTag {
+  name?: unknown
 }
 
 function getOpenCodeConfigPath(): string {
@@ -68,7 +82,18 @@ function parsePluginSpec(spec: string): ParsedPluginSpec {
     lower.startsWith('http://') ||
     lower.startsWith('https://')
   ) {
-    return { raw: spec, kind: 'remote' }
+    const [remoteUrl, ref] = trimmed.split('#', 2)
+    const githubMatch = remoteUrl.match(/github\.com[:/]([^/]+)\/([^/#]+?)(?:\.git)?$/i)
+      || remoteUrl.match(/^github:([^/]+)\/([^/#]+)$/i)
+
+    return {
+      raw: spec,
+      kind: 'remote',
+      remoteUrl,
+      ref: ref || undefined,
+      githubOwner: githubMatch?.[1],
+      githubRepo: githubMatch?.[2],
+    }
   }
 
   if (trimmed.startsWith('@')) {
@@ -108,6 +133,62 @@ function updatePlugin(moduleName: string): void {
   )
 }
 
+function updatePluginSpec(pluginSpec: string): void {
+  execFileSync(
+    'opencode',
+    ['plugin', pluginSpec, '--global', '--force'],
+    { stdio: 'inherit' }
+  )
+}
+
+function parseStableSemverTag(tag: string): [number, number, number] | null {
+  const match = tag.trim().match(/^v?(\d+)\.(\d+)\.(\d+)$/)
+  if (!match) {
+    return null
+  }
+
+  return [Number(match[1]), Number(match[2]), Number(match[3])]
+}
+
+function compareVersions(a: [number, number, number], b: [number, number, number]): number {
+  if (a[0] !== b[0]) return a[0] - b[0]
+  if (a[1] !== b[1]) return a[1] - b[1]
+  return a[2] - b[2]
+}
+
+async function fetchLatestSelfTag(): Promise<string> {
+  const response = await fetch(GITHUB_TAGS_API_URL, {
+    headers: {
+      Accept: 'application/vnd.github+json',
+      'User-Agent': 'opencode-enhancer',
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch GitHub tags (${response.status})`)
+  }
+
+  const tags = await response.json() as GithubTag[]
+  const stableTags = tags
+    .map((entry) => typeof entry.name === 'string' ? entry.name.trim() : '')
+    .filter(Boolean)
+    .map((name) => ({ name, version: parseStableSemverTag(name) }))
+    .filter((entry): entry is { name: string, version: [number, number, number] } => entry.version !== null)
+    .sort((a, b) => compareVersions(b.version, a.version))
+
+  if (stableTags.length === 0) {
+    throw new Error(`No stable GitHub tags found for ${SELF_GITHUB_OWNER}/${SELF_GITHUB_REPO}`)
+  }
+
+  return stableTags[0].name
+}
+
+function isSelfGithubPlugin(parsed: ParsedPluginSpec): boolean {
+  return parsed.kind === 'remote'
+    && parsed.githubOwner?.toLowerCase() === SELF_GITHUB_OWNER
+    && parsed.githubRepo?.toLowerCase() === SELF_GITHUB_REPO
+}
+
 function printSummary(results: PluginUpdateResult[], dryRun: boolean): void {
   const updated = results.filter((result) => result.action === 'updated')
   const skipped = results.filter((result) => result.action === 'skipped')
@@ -128,13 +209,61 @@ function printSummary(results: PluginUpdateResult[], dryRun: boolean): void {
   console.log()
 }
 
-export function runPluginsUpdateCommand(options: PluginUpdateOptions): void {
+export async function runPluginsUpdateCommand(options: PluginUpdateOptions): Promise<void> {
   const configuredPlugins = loadConfiguredPlugins()
   const exclude = new Set((options.exclude || []).map((item) => item.trim()).filter(Boolean))
   const results: PluginUpdateResult[] = []
+  let latestSelfTag: string | undefined
+  let selfTagError: string | undefined
 
   for (const rawSpec of configuredPlugins) {
     const parsed = parsePluginSpec(rawSpec)
+
+    if (isSelfGithubPlugin(parsed)) {
+      const selfName = `${SELF_GITHUB_OWNER}/${SELF_GITHUB_REPO}`
+      if (exclude.has(SELF_GITHUB_REPO) || exclude.has(selfName)) {
+        results.push({
+          plugin: rawSpec,
+          action: 'skipped',
+          reason: 'excluded',
+        })
+        continue
+      }
+
+      if (!latestSelfTag && !selfTagError) {
+        try {
+          latestSelfTag = await fetchLatestSelfTag()
+        } catch (error) {
+          selfTagError = error instanceof Error ? error.message : String(error)
+        }
+      }
+
+      if (!latestSelfTag) {
+        results.push({
+          plugin: rawSpec,
+          action: 'skipped',
+          reason: selfTagError || 'failed to resolve latest GitHub tag',
+        })
+        continue
+      }
+
+      const targetSpec = SELF_GITHUB_SEMVER_SPEC
+
+      if (options.dryRun) {
+        results.push({
+          plugin: targetSpec,
+          action: 'updated',
+        })
+        continue
+      }
+
+      updatePluginSpec(targetSpec)
+      results.push({
+        plugin: targetSpec,
+        action: 'updated',
+      })
+      continue
+    }
 
     if (parsed.kind !== 'registry' || !parsed.moduleName) {
       results.push({

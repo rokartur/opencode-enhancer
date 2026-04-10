@@ -5,6 +5,7 @@ OpenCode enhancer for Codex accounts, usage tracking, plugin updates, and future
 ## What It Does
 
 - rotates across multiple Codex/OpenAI accounts
+- automatically switches to another OpenAI account when the current one runs out of usage or hits limits
 - keeps account auth in sync with OpenCode
 - tracks usage and cached usage snapshots
 - updates other OpenCode plugins from the global config
@@ -12,33 +13,26 @@ OpenCode enhancer for Codex accounts, usage tracking, plugin updates, and future
 
 ## Install
 
-### Local Path
-
-This is the most reliable option.
-
-1. Clone the repository.
-2. Build it:
+Recommended for shared installs: use a release tag instead of `main`.
 
 ```bash
-npm install
-npm run build
-```
-
-3. Install it into OpenCode from the local path:
-
-```bash
-opencode plugin "file:/absolute/path/to/opencode-enhancer" --global
-```
-
-### Directly From GitHub
-
-If your OpenCode installation accepts npm-compatible git specs, you can try:
-
-```bash
-opencode plugin "git+https://github.com/rokartur/opencode-enhancer.git" --global
+opencode plugin "git+https://github.com/rokartur/opencode-enhancer.git#semver:*" --global
 ```
 
 This repository includes a `prepare` script so the package builds when installed from git.
+
+## Updates
+
+If `opencode-enhancer` is installed from GitHub, `plugins update` will detect it and reinstall it using `#semver:*`, which resolves to the newest semver tag.
+
+Examples:
+
+```bash
+opencode-enhancer plugins update --dry-run
+opencode-enhancer plugins update
+```
+
+Other registry plugins are still updated with `@latest`.
 
 ## CLI
 
@@ -78,29 +72,3 @@ Examples:
 - `OPENCODE_ENHANCER_DEBUG`
 - `OPENCODE_ENHANCER_USAGE_BASE_URL`
 - `OPENCODE_ENHANCER_REFRESH_QUEUE_CONCURRENCY`
-
-## GitHub Repo Setup
-
-If you want to publish this through GitHub instead of npm:
-
-```bash
-git init -b main
-git add .
-git commit -m "rename plugin to opencode-enhancer"
-git remote add origin git@github.com:rokartur/opencode-enhancer.git
-git push -u origin main
-```
-
-If the remote already exists, skip the `git remote add` step.
-
-## Development
-
-```bash
-npm install
-npm run build
-npm run lint
-```
-
-## License
-
-MIT

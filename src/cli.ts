@@ -122,7 +122,7 @@ async function main(): Promise<void> {
         .map((item) => item.trim())
         .filter(Boolean)
 
-      runPluginsUpdateCommand({
+      await runPluginsUpdateCommand({
         dryRun: hasFlag('--dry-run'),
         includePinned: hasFlag('--include-pinned'),
         exclude,
@@ -143,7 +143,7 @@ Commands:
   list             List all configured accounts
   status           Show detailed account status
   usage            Check usage/quota across all connected providers
-  plugins update   Update OpenCode registry plugins from global config
+  plugins update   Update configured plugins and self-update from GitHub tags
   path             Show config file location
   help             Show this help message
 
