@@ -1,5 +1,6 @@
 // CLI usage command: formatted table output for provider usage
 import { fetchAllUsage, allProviders } from './providers/index.js';
+import { decodeJwtPayload } from './jwt.js';
 import { loadStore } from './store.js';
 import { readUsageCache, writeUsageCache } from './usage-cache.js';
 // ── ANSI helpers ──────────────────────────────────────────────
@@ -77,7 +78,9 @@ function padLeft(str, len) {
     const pad = Math.max(0, len - visibleLength(str));
     return ' '.repeat(pad) + str;
 }
-const CHART_BAR_WIDTH = 8;
+const TABLE_INDENT = '  ';
+const COLUMN_GAP = '  ';
+const CHART_BAR_WIDTH = 6;
 function normalizeWindowLabel(label) {
     return label.trim().toLowerCase();
 }
@@ -180,11 +183,29 @@ function getProviderDisplayName(result) {
     }
     return result.providerName;
 }
+function getPlanTypeFromClaims(claims) {
+    if (!claims)
+        return undefined;
+    const auth = claims['https://api.openai.com/auth'];
+    return typeof auth?.chatgpt_plan_type === 'string' ? auth.chatgpt_plan_type : undefined;
+}
+function getCodexPlanFromAccount(account) {
+    const explicitPlan = formatPlanValue(account.planType);
+    if (explicitPlan)
+        return explicitPlan;
+    const accessTokenPlan = formatPlanValue(getPlanTypeFromClaims(decodeJwtPayload(account.accessToken)));
+    if (accessTokenPlan)
+        return accessTokenPlan;
+    const idTokenPlan = formatPlanValue(getPlanTypeFromClaims(decodeJwtPayload(account.idToken || '')));
+    if (idTokenPlan)
+        return idTokenPlan;
+    return undefined;
+}
 function getRenderContext() {
     const store = loadStore();
     const codexPlansByAlias = new Map();
     for (const account of Object.values(store.accounts)) {
-        const plan = formatPlanValue(account.planType);
+        const plan = getCodexPlanFromAccount(account);
         if (plan) {
             codexPlansByAlias.set(account.alias, plan);
         }
@@ -204,9 +225,21 @@ function getDisplayLabel(result, rawLabel, context) {
     }
     return label;
 }
-function getPlanLabel(result, usage, rawLabel, context) {
-    if (result.providerId === 'codex' && rawLabel) {
-        return context.codexPlansByAlias.get(rawLabel);
+function normalizePlanLookupLabel(label) {
+    if (!label)
+        return undefined;
+    const plain = stripAnsi(label).replace(/\s+\(active\)\s*$/, '').trim();
+    return plain || undefined;
+}
+function getPlanLabel(result, usage, rawLabel, context, explicitPlan) {
+    const directPlan = formatPlanValue(explicitPlan || result.plan);
+    if (directPlan)
+        return directPlan;
+    if (result.providerId === 'codex') {
+        const lookupLabel = normalizePlanLookupLabel(rawLabel);
+        if (lookupLabel) {
+            return context.codexPlansByAlias.get(lookupLabel);
+        }
     }
     return extractPlanFromUsage(usage) || extractPlanFromProviderName(result);
 }
@@ -221,74 +254,81 @@ function getTableLayout(results, context) {
         getProviderDisplayName(result),
         ...(result.accounts?.map((acc) => `  ${getDisplayLabel(result, acc.label, context)}`) ?? []),
     ]);
-    const providerWidth = clamp(Math.max(18, ...labels.map((label) => label.length)), 18, 34);
+    const providerWidth = clamp(Math.max(18, ...labels.map((label) => visibleLength(label))), 18, 34);
     const planLengths = results.flatMap((result) => {
         const plans = [];
         if (!hasAccountRows(result)) {
-            plans.push(getPlanLabel(result, result.usage, undefined, context));
+            plans.push(getPlanLabel(result, result.usage, undefined, context, result.plan));
         }
         for (const account of result.accounts ?? []) {
-            plans.push(getPlanLabel(result, account.usage, account.label, context));
+            plans.push(getPlanLabel(result, account.usage, account.label, context, account.plan));
         }
         return plans.map((plan) => visibleLength(plan ?? '—'));
     });
-    const planWidth = clamp(Math.max(14, ...planLengths), 14, 24);
+    const planWidth = clamp(Math.max(10, ...planLengths), 10, 24);
     return {
         providerWidth,
-        chartWidth: 13,
+        chartWidth: CHART_BAR_WIDTH + 1 + 4,
         planWidth,
     };
 }
 // ── Format a single result row ────────────────────────────────
-function formatResultRow(result, layout, context, label) {
-    const rawLabel = label || getProviderDisplayName(result);
-    const name = padRight(getDisplayLabel(result, rawLabel, context), layout.providerWidth);
+function formatResultRow(result, layout, context, labels) {
+    const rawLabel = labels?.rawLabel;
+    const displayLabel = labels?.displayLabel || getDisplayLabel(result, rawLabel, context);
+    const name = padRight(displayLabel, layout.providerWidth);
+    const combinedChartWidth = layout.chartWidth * 2 + COLUMN_GAP.length;
+    const tablePrefix = `${TABLE_INDENT}${name}${COLUMN_GAP}`;
     if (result.status === 'not_configured') {
-        return `  ${c.dim}${name}${padRight('not configured', 12)}${c.reset}`;
+        return `${TABLE_INDENT}${c.dim}${name}${COLUMN_GAP}${padRight('not configured', combinedChartWidth + layout.planWidth + COLUMN_GAP.length + 6)}${c.reset}`;
     }
     if (result.status === 'auth_expired') {
-        return `  ${c.dim}${name}${c.reset}${c.red}${padRight('auth expired', layout.chartWidth * 2)}${c.reset}  ${formatPlanCell(undefined, layout.planWidth)}${c.dim}${result.error || ''}${c.reset}`;
+        return `${tablePrefix}${c.red}${padRight('auth expired', combinedChartWidth)}${c.reset}${COLUMN_GAP}${formatPlanCell(undefined, layout.planWidth)}${COLUMN_GAP}${c.dim}${result.error || ''}${c.reset}`;
     }
     if (result.status === 'error') {
-        return `  ${name}${c.red}${padRight('error', layout.chartWidth * 2)}${c.reset}  ${formatPlanCell(undefined, layout.planWidth)}${c.dim}${(result.error || '').slice(0, 50)}${c.reset}`;
+        return `${tablePrefix}${c.red}${padRight('error', combinedChartWidth)}${c.reset}${COLUMN_GAP}${formatPlanCell(undefined, layout.planWidth)}${COLUMN_GAP}${c.dim}${(result.error || '').slice(0, 50)}${c.reset}`;
     }
     if (!result.usage) {
-        return `  ${name}${c.dim}no data${c.reset}`;
+        return `${tablePrefix}${c.dim}no data${c.reset}`;
     }
     const usage = result.usage;
     const fiveHourChart = formatChartCell(findUsageWindow(usage, '5h'), layout.chartWidth);
     const weeklyChart = formatChartCell(findUsageWindow(usage, 'weekly'), layout.chartWidth);
-    const planCell = formatPlanCell(getPlanLabel(result, usage, label, context), layout.planWidth);
+    const planCell = formatPlanCell(getPlanLabel(result, usage, rawLabel, context, result.plan), layout.planWidth);
     if (usage.type === 'payAsYouGo') {
-        return `  ${name}${padRight(`${c.dim}—${c.reset}`, layout.chartWidth)}${padRight(`${c.dim}—${c.reset}`, layout.chartWidth)}  ${planCell}${c.dim}—${c.reset}`;
+        return `${tablePrefix}${padRight(`${c.dim}—${c.reset}`, layout.chartWidth)}${COLUMN_GAP}${padRight(`${c.dim}—${c.reset}`, layout.chartWidth)}${COLUMN_GAP}${planCell}${COLUMN_GAP}${c.dim}—${c.reset}`;
     }
     // Reset time: pick earliest reset
     const resets = usage.windows
         .filter((w) => w.resetsAt && w.resetsAt > Date.now())
         .sort((a, b) => (a.resetsAt || 0) - (b.resetsAt || 0));
     const resetStr = resets.length > 0 ? formatResetTime(resets[0].resetsAt) : `${c.dim}—${c.reset}`;
-    return `  ${name}${fiveHourChart}${weeklyChart}  ${planCell}${resetStr}`;
+    return `${tablePrefix}${fiveHourChart}${COLUMN_GAP}${weeklyChart}${COLUMN_GAP}${planCell}${COLUMN_GAP}${resetStr}`;
 }
 function formatProviderHeaderRow(result, layout) {
     const name = padRight(getProviderDisplayName(result), layout.providerWidth);
-    return `  ${c.bold}${name}${c.reset}${' '.repeat(layout.chartWidth)}${' '.repeat(layout.chartWidth)}  ${' '.repeat(layout.planWidth)}`;
+    return `${TABLE_INDENT}${c.bold}${name}${c.reset}${COLUMN_GAP}${' '.repeat(layout.chartWidth)}${COLUMN_GAP}${' '.repeat(layout.chartWidth)}${COLUMN_GAP}${' '.repeat(layout.planWidth)}`;
 }
 // ── Format account sub-rows ───────────────────────────────────
 function formatAccountRows(result, layout, context) {
     if (!result.accounts || result.accounts.length === 0)
         return [];
     return result.accounts.map((acc) => {
-        const subLabel = `  ${getDisplayLabel(result, acc.label, context)}`;
+        const subLabel = `${TABLE_INDENT}${getDisplayLabel(result, acc.label, context)}`;
         const subResult = {
             providerId: result.providerId,
-            providerName: subLabel,
+            providerName: acc.label,
             billingType: result.billingType,
+            plan: acc.plan,
             status: acc.status,
             usage: acc.usage,
             error: acc.error,
             fetchedAt: result.fetchedAt,
         };
-        return formatResultRow(subResult, layout, context, subLabel);
+        return formatResultRow(subResult, layout, context, {
+            rawLabel: acc.label,
+            displayLabel: subLabel,
+        });
     });
 }
 export async function runUsageCommand(opts) {
@@ -337,8 +377,8 @@ function renderTable(results, verbose = false) {
     const configured = results.filter((r) => r.status !== 'not_configured');
     const notConfigured = results.filter((r) => r.status === 'not_configured');
     console.log();
-    const header = `  ${c.bold}${padRight('Provider', layout.providerWidth)}${padRight('5h', layout.chartWidth)}${padRight('Weekly', layout.chartWidth)}  ${padRight('Plan', layout.planWidth)}Resets${c.reset}`;
-    const divider = `  ${c.dim}${'─'.repeat(visibleLength(header) - 2)}${c.reset}`;
+    const header = `${TABLE_INDENT}${c.bold}${padRight('Provider', layout.providerWidth)}${COLUMN_GAP}${padRight('5h', layout.chartWidth)}${COLUMN_GAP}${padRight('Weekly', layout.chartWidth)}${COLUMN_GAP}${padRight('Plan', layout.planWidth)}${COLUMN_GAP}Resets${c.reset}`;
+    const divider = `${TABLE_INDENT}${c.dim}${'─'.repeat(visibleLength(header) - visibleLength(TABLE_INDENT))}${c.reset}`;
     console.log(header);
     console.log(divider);
     for (const result of configured) {
