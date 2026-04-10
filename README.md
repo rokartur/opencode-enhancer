@@ -57,7 +57,7 @@ Other registry plugins are still updated with `@latest`.
 
 ```bash
 opencode-enhancer add <alias>
-opencode-enhancer remove <alias>
+opencode-enhancer remove
 opencode-enhancer list
 opencode-enhancer status
 opencode-enhancer usage

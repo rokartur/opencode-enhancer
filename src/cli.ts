@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { createInterface } from 'node:readline/promises'
+import { stdin as input, stdout as output } from 'node:process'
 import { loginAccount } from './auth.js'
 import { removeAccount, listAccounts, getStorePath, loadStore } from './store.js'
 import { runPluginsUpdateCommand } from './plugin-updates.js'
@@ -17,6 +19,84 @@ function getFlagValue(flag: string): string | undefined {
 
 function hasFlag(flag: string): boolean {
   return args.includes(flag)
+}
+
+function formatAccountUsageHint(account: ReturnType<typeof listAccounts>[number]): string {
+  const parts: string[] = []
+
+  const fiveHour = account.rateLimits?.fiveHour
+  if (typeof fiveHour?.remaining === 'number') {
+    if (typeof fiveHour.limit === 'number' && fiveHour.limit !== 100) {
+      parts.push(`5h ${fiveHour.remaining}/${fiveHour.limit} left`)
+    } else {
+      parts.push(`5h ${fiveHour.remaining}% left`)
+    }
+  }
+
+  const weekly = account.rateLimits?.weekly
+  if (typeof weekly?.remaining === 'number') {
+    if (typeof weekly.limit === 'number' && weekly.limit !== 100) {
+      parts.push(`weekly ${weekly.remaining}/${weekly.limit} left`)
+    } else {
+      parts.push(`weekly ${weekly.remaining}% left`)
+    }
+  }
+
+  return parts.join(' · ')
+}
+
+function formatAccountOption(account: ReturnType<typeof listAccounts>[number], activeAlias: string | null): string {
+  const primary = account.email?.trim() || account.alias
+  const secondary = primary === account.alias ? '' : ` (${account.alias})`
+  const active = account.alias === activeAlias ? ' [active]' : ''
+  const usage = formatAccountUsageHint(account)
+  return usage ? `${primary}${secondary}${active} - ${usage}` : `${primary}${secondary}${active}`
+}
+
+async function selectAccountAliasForRemoval(): Promise<string | null> {
+  const accounts = listAccounts()
+  if (accounts.length === 0) {
+    console.log('No accounts configured.')
+    return null
+  }
+
+  if (!input.isTTY || !output.isTTY) {
+    throw new Error('Interactive account selection requires a TTY.')
+  }
+
+  const store = loadStore()
+  console.log('\nSelect account to remove:\n')
+  for (const [index, account] of accounts.entries()) {
+    console.log(`  ${index + 1}. ${formatAccountOption(account, store.activeAlias)}`)
+  }
+  console.log('  0. Cancel\n')
+
+  const rl = createInterface({ input, output })
+  try {
+    while (true) {
+      const answer = (await rl.question('Choose account: ')).trim()
+      const choice = Number.parseInt(answer, 10)
+
+      if (Number.isNaN(choice)) {
+        console.log('Enter a number from the list.')
+        continue
+      }
+
+      if (choice === 0) {
+        console.log('Removal cancelled.')
+        return null
+      }
+
+      const selected = accounts[choice - 1]
+      if (selected) {
+        return selected.alias
+      }
+
+      console.log(`Choose a number between 0 and ${accounts.length}.`)
+    }
+  } finally {
+    rl.close()
+  }
 }
 
 async function main(): Promise<void> {
@@ -41,12 +121,21 @@ async function main(): Promise<void> {
 
     case 'remove':
     case 'rm': {
-      if (!alias) {
-        console.error('Usage: opencode-enhancer remove <alias>')
+      if (alias) {
+        console.error('Usage: opencode-enhancer remove')
         process.exit(1)
       }
-      removeAccount(alias)
-      console.log(`Account "${alias}" removed.`)
+      try {
+        const selectedAlias = await selectAccountAliasForRemoval()
+        if (!selectedAlias) {
+          break
+        }
+        removeAccount(selectedAlias)
+        console.log(`Account "${selectedAlias}" removed.`)
+      } catch (err) {
+        console.error(`Failed to remove account: ${err}`)
+        process.exit(1)
+      }
       break
     }
 
@@ -139,7 +228,7 @@ opencode-enhancer - OpenCode enhancer for Codex accounts, usage, plugin updates,
 
 Commands:
   add <alias>      Add a new account (opens browser for OAuth)
-  remove <alias>   Remove an account
+  remove           Remove an account (opens selector)
   list             List all configured accounts
   status           Show detailed account status
   usage            Check usage/quota across all connected providers
