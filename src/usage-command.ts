@@ -91,7 +91,7 @@ function padLeft(str: string, len: number): string {
 
 interface TableLayout {
   providerWidth: number
-  chartWidth: number
+  usageWidth: number
   planWidth: number
 }
 
@@ -102,56 +102,69 @@ interface RenderContext {
 
 const TABLE_INDENT = '  '
 const COLUMN_GAP = '  '
-const CHART_BAR_WIDTH = 6
+const MINI_BAR_WIDTH = 4
 
 function normalizeWindowLabel(label: string): string {
   return label.trim().toLowerCase()
 }
 
-function isStandardWindowLabel(label: string): boolean {
-  const normalized = normalizeWindowLabel(label)
-  return normalized === '5h' || normalized === 'weekly'
-}
-
-function findUsageWindow(usage: ProviderUsage, label: '5h' | 'weekly'): UsageWindow | undefined {
-  if (usage.type !== 'quotaBased') return undefined
-  return usage.windows.find((window) => normalizeWindowLabel(window.label) === label)
-}
-
-function formatChartCell(window: UsageWindow | undefined, width: number): string {
-  if (!window) {
-    return padRight(`${c.dim}—${c.reset}`, width)
-  }
-
-  const used = Math.round(window.utilization)
-  const pctColor = utilizationColor(used)
-  const pct = padLeft(`${pctColor}${used}%${c.reset}`, 4)
-  return padRight(`${buildBar(window.utilization, CHART_BAR_WIDTH)} ${pct}`, width)
-}
-
 function abbreviateWindowLabel(label: string): string {
   const normalized = normalizeWindowLabel(label)
   if (normalized === 'weekly') return 'wk'
+  if (normalized === 'monthly') return 'mo'
   return truncateText(label, 14)
+}
+
+function formatCount(value: number): string {
+  if (!Number.isFinite(value)) return '0'
+  if (Math.abs(value) >= 1000) {
+    return new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(value)
+  }
+  if (Number.isInteger(value)) return String(value)
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(value)
+}
+
+function getUsageWindows(usage: ProviderUsage): UsageWindow[] {
+  if (usage.type !== 'quotaBased') return []
+  return usage.windows.filter((window) => window.label !== 'balance' && !window.label.startsWith('$'))
+}
+
+function formatMiniChart(utilization: number): string {
+  return buildBar(utilization, MINI_BAR_WIDTH)
+}
+
+function formatQuotaWindow(window: UsageWindow, usage: ProviderUsage): string {
+  const used = Math.round(window.utilization)
+  const left = Math.max(0, 100 - used)
+  const color = utilizationColor(used)
+  const label = `${c.dim}${abbreviateWindowLabel(window.label)}${c.reset}`
+  const chart = formatMiniChart(window.utilization)
+
+  if (
+    usage.type === 'quotaBased' &&
+    typeof usage.remaining === 'number' &&
+    typeof usage.entitlement === 'number' &&
+    usage.entitlement > 0 &&
+    getUsageWindows(usage)[0] === window
+  ) {
+    return `${label} ${chart} ${c.green}${formatCount(usage.remaining)}${c.reset}${c.dim}/${c.reset}${c.cyan}${formatCount(usage.entitlement)}${c.reset}`
+  }
+
+  return `${label} ${chart} ${color}${used}${c.reset}${c.dim}/${c.reset}${color}${left}${c.reset}`
 }
 
 function formatUsageDetails(usage: ProviderUsage): string {
   if (usage.type === 'payAsYouGo') {
-    return `$${usage.used.toFixed(2)} / $${usage.total.toFixed(2)}`
+    return `${formatMiniChart(usage.utilization)} $${usage.used.toFixed(2)} / $${usage.total.toFixed(2)}`
   }
 
-  const windows = usage.windows.filter((w) => w.label !== 'balance' && !w.label.startsWith('$'))
-  const extraWindows = windows.filter((w) => !isStandardWindowLabel(w.label))
-  const standardWindows = windows.filter((w) => isStandardWindowLabel(w.label))
+  const windows = getUsageWindows(usage)
 
-  const parts = (extraWindows.length > 0 ? extraWindows : standardWindows)
-    .slice(0, 3)
-    .map((window) => {
-      const used = Math.round(window.utilization)
-      const left = Math.max(0, 100 - used)
-      const color = utilizationColor(used)
-      return `${c.dim}${abbreviateWindowLabel(window.label)}${c.reset} ${color}${used}${c.reset}${c.dim}/${c.reset}${color}${left}${c.reset}`
-    })
+  const parts = windows.slice(0, 2).map((window) => formatQuotaWindow(window, usage))
+
+  if (windows.length > 2) {
+    parts.push(`${c.dim}+${windows.length - 2} more${c.reset}`)
+  }
 
   if (parts.length > 0) {
     return parts.join(` ${c.dim}·${c.reset} `)
@@ -325,11 +338,22 @@ function getTableLayout(results: ProviderResult[], context: RenderContext): Tabl
     24
   )
 
-  return {
-    providerWidth,
-    chartWidth: CHART_BAR_WIDTH + 1 + 4,
-    planWidth,
-  }
+    return {
+      providerWidth,
+      usageWidth: clamp(
+        Math.max(18, ...results.flatMap((result) => {
+          const values: string[] = []
+          if (result.usage) values.push(formatUsageDetails(result.usage))
+          for (const account of result.accounts ?? []) {
+            values.push(formatUsageDetails(account.usage))
+          }
+          return values.map((value) => visibleLength(value))
+        })),
+        18,
+        52
+      ),
+      planWidth,
+    }
 }
 
 // ── Format a single result row ────────────────────────────────
@@ -343,19 +367,18 @@ function formatResultRow(
   const rawLabel = labels?.rawLabel
   const displayLabel = labels?.displayLabel || getDisplayLabel(result, rawLabel, context)
   const name = padRight(displayLabel, layout.providerWidth)
-  const combinedChartWidth = layout.chartWidth * 2 + COLUMN_GAP.length
   const tablePrefix = `${TABLE_INDENT}${name}${COLUMN_GAP}`
 
   if (result.status === 'not_configured') {
-    return `${TABLE_INDENT}${c.dim}${name}${COLUMN_GAP}${padRight('not configured', combinedChartWidth + layout.planWidth + COLUMN_GAP.length + 6)}${c.reset}`
+    return `${TABLE_INDENT}${c.dim}${name}${COLUMN_GAP}${padRight('not configured', layout.usageWidth + layout.planWidth + COLUMN_GAP.length + 6)}${c.reset}`
   }
 
   if (result.status === 'auth_expired') {
-    return `${tablePrefix}${c.red}${padRight('auth expired', combinedChartWidth)}${c.reset}${COLUMN_GAP}${formatPlanCell(undefined, layout.planWidth)}${COLUMN_GAP}${c.dim}${result.error || ''}${c.reset}`
+    return `${tablePrefix}${c.red}${padRight('auth expired', layout.usageWidth)}${c.reset}${COLUMN_GAP}${formatPlanCell(undefined, layout.planWidth)}${COLUMN_GAP}${c.dim}${result.error || ''}${c.reset}`
   }
 
   if (result.status === 'error') {
-    return `${tablePrefix}${c.red}${padRight('error', combinedChartWidth)}${c.reset}${COLUMN_GAP}${formatPlanCell(undefined, layout.planWidth)}${COLUMN_GAP}${c.dim}${(result.error || '').slice(0, 50)}${c.reset}`
+    return `${tablePrefix}${c.red}${padRight('error', layout.usageWidth)}${c.reset}${COLUMN_GAP}${formatPlanCell(undefined, layout.planWidth)}${COLUMN_GAP}${c.dim}${(result.error || '').slice(0, 50)}${c.reset}`
   }
 
   if (!result.usage) {
@@ -363,12 +386,11 @@ function formatResultRow(
   }
 
   const usage = result.usage
-  const fiveHourChart = formatChartCell(findUsageWindow(usage, '5h'), layout.chartWidth)
-  const weeklyChart = formatChartCell(findUsageWindow(usage, 'weekly'), layout.chartWidth)
+  const usageCell = padRight(formatUsageDetails(usage), layout.usageWidth)
   const planCell = formatPlanCell(getPlanLabel(result, usage, rawLabel, context, result.plan), layout.planWidth)
 
   if (usage.type === 'payAsYouGo') {
-    return `${tablePrefix}${padRight(`${c.dim}—${c.reset}`, layout.chartWidth)}${COLUMN_GAP}${padRight(`${c.dim}—${c.reset}`, layout.chartWidth)}${COLUMN_GAP}${planCell}${COLUMN_GAP}${c.dim}—${c.reset}`
+    return `${tablePrefix}${usageCell}${COLUMN_GAP}${planCell}${COLUMN_GAP}${c.dim}—${c.reset}`
   }
 
   // Reset time: pick earliest reset
@@ -377,12 +399,12 @@ function formatResultRow(
     .sort((a, b) => (a.resetsAt || 0) - (b.resetsAt || 0))
   const resetStr = resets.length > 0 ? formatResetTime(resets[0].resetsAt) : `${c.dim}—${c.reset}`
 
-  return `${tablePrefix}${fiveHourChart}${COLUMN_GAP}${weeklyChart}${COLUMN_GAP}${planCell}${COLUMN_GAP}${resetStr}`
+  return `${tablePrefix}${usageCell}${COLUMN_GAP}${planCell}${COLUMN_GAP}${resetStr}`
 }
 
 function formatProviderHeaderRow(result: ProviderResult, layout: TableLayout): string {
   const name = padRight(getProviderDisplayName(result), layout.providerWidth)
-  return `${TABLE_INDENT}${c.bold}${name}${c.reset}${COLUMN_GAP}${' '.repeat(layout.chartWidth)}${COLUMN_GAP}${' '.repeat(layout.chartWidth)}${COLUMN_GAP}${' '.repeat(layout.planWidth)}`
+  return `${TABLE_INDENT}${c.bold}${name}${c.reset}${COLUMN_GAP}${' '.repeat(layout.usageWidth)}${COLUMN_GAP}${' '.repeat(layout.planWidth)}`
 }
 
 // ── Format account sub-rows ───────────────────────────────────
@@ -477,7 +499,7 @@ function renderTable(results: ProviderResult[], verbose: boolean = false): void 
   const notConfigured = results.filter((r) => r.status === 'not_configured')
 
   console.log()
-  const header = `${TABLE_INDENT}${c.bold}${padRight('Provider', layout.providerWidth)}${COLUMN_GAP}${padRight('5h', layout.chartWidth)}${COLUMN_GAP}${padRight('Weekly', layout.chartWidth)}${COLUMN_GAP}${padRight('Plan', layout.planWidth)}${COLUMN_GAP}Resets${c.reset}`
+  const header = `${TABLE_INDENT}${c.bold}${padRight('Provider', layout.providerWidth)}${COLUMN_GAP}${padRight('Usage', layout.usageWidth)}${COLUMN_GAP}${padRight('Plan', layout.planWidth)}${COLUMN_GAP}Resets${c.reset}`
   const divider = `${TABLE_INDENT}${c.dim}${'─'.repeat(visibleLength(header) - visibleLength(TABLE_INDENT))}${c.reset}`
   console.log(header)
   console.log(divider)
