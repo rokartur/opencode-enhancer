@@ -6,7 +6,6 @@ node
 .env
 .env.*
 !.env.example
-dist
 
 # Auto-login
 auto-login/credentials.json

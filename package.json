@@ -12,7 +12,7 @@
     "build": "tsc",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "prepare": "npm run build"
+    "prepack": "npm run build"
   },
   "dependencies": {
     "@openauthjs/openauth": "^0.4.3"

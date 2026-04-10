@@ -19,7 +19,23 @@ Recommended for shared installs: use a release tag instead of `main`.
 opencode plugin "git+https://github.com/rokartur/opencode-enhancer.git#semver:*" --global
 ```
 
-This repository includes a `prepare` script so the package builds when installed from git.
+### Global CLI
+
+Installing the plugin into OpenCode does not automatically add `opencode-enhancer` to your system `PATH`.
+
+If you also want the CLI command available globally, install it as a global Node package:
+
+```bash
+npm install -g "git+https://github.com/rokartur/opencode-enhancer.git#semver:*"
+```
+
+`bun install -g` does not currently resolve `#semver:*` for GitHub git dependencies correctly, so use `npm` for the moving-latest install flow or pin an explicit tag with Bun.
+
+Then the command will be available globally:
+
+```bash
+opencode-enhancer --help
+```
 
 ## Updates
 

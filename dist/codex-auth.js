@@ -1,0 +1,338 @@
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { addAccount, loadStore, updateAccount } from './store.js';
+import { decodeJwtPayload } from './jwt.js';
+const CODEX_AUTH_FILE_ENV = 'OPENCODE_ENHANCER_CODEX_AUTH_FILE';
+const LEGACY_CODEX_AUTH_FILE_ENV = 'OPENCODE_MULTI_AUTH_CODEX_AUTH_FILE';
+function getCodexAuthFilePath() {
+    const override = process.env[CODEX_AUTH_FILE_ENV] || process.env[LEGACY_CODEX_AUTH_FILE_ENV];
+    if (override && override.trim())
+        return path.resolve(override.trim());
+    const CODEX_DIR = path.join(os.homedir(), '.codex');
+    return path.join(CODEX_DIR, 'auth.json');
+}
+const CODEX_AUTH_FILE = getCodexAuthFilePath();
+let lastFingerprint = null;
+let lastAuthError = null;
+export function getCodexAuthPath() {
+    return CODEX_AUTH_FILE;
+}
+function ensureDir() {
+    const dir = path.dirname(CODEX_AUTH_FILE);
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    }
+}
+export function loadCodexAuthFile() {
+    lastAuthError = null;
+    if (!fs.existsSync(CODEX_AUTH_FILE))
+        return null;
+    try {
+        const raw = fs.readFileSync(CODEX_AUTH_FILE, 'utf-8');
+        return JSON.parse(raw);
+    }
+    catch (err) {
+        lastAuthError = 'Failed to parse codex auth.json';
+        console.error('[enhancer] Failed to parse codex auth.json:', err);
+        return null;
+    }
+}
+export function writeCodexAuthFile(auth) {
+    ensureDir();
+    fs.writeFileSync(CODEX_AUTH_FILE, JSON.stringify(auth, null, 2), {
+        mode: 0o600
+    });
+}
+function normalizeTokens(auth) {
+    if (!auth || typeof auth !== 'object')
+        return null;
+    const tokens = (auth.tokens && typeof auth.tokens === 'object') ? auth.tokens : auth;
+    const accessToken = tokens.access_token ??
+        tokens.accessToken ??
+        tokens.access ??
+        auth.access_token ??
+        auth.accessToken ??
+        auth.access;
+    const refreshToken = tokens.refresh_token ??
+        tokens.refreshToken ??
+        tokens.refresh ??
+        auth.refresh_token ??
+        auth.refreshToken ??
+        auth.refresh;
+    const idToken = tokens.id_token ??
+        tokens.idToken ??
+        tokens.id ??
+        auth.id_token ??
+        auth.idToken ??
+        auth.id;
+    const accountId = tokens.account_id ??
+        tokens.accountId ??
+        auth.account_id ??
+        auth.accountId;
+    const lastRefresh = auth.last_refresh ?? auth.lastRefresh;
+    const result = {
+        accessToken: typeof accessToken === 'string' ? accessToken : undefined,
+        refreshToken: typeof refreshToken === 'string' ? refreshToken : undefined,
+        idToken: typeof idToken === 'string' ? idToken : undefined,
+        accountId: typeof accountId === 'string' ? accountId : undefined,
+        lastRefresh: typeof lastRefresh === 'string' ? lastRefresh : undefined
+    };
+    if (!result.accessToken && !result.refreshToken && !result.idToken && !result.accountId) {
+        return null;
+    }
+    return result;
+}
+export function getEmailFromClaims(claims) {
+    if (!claims)
+        return undefined;
+    if (typeof claims.email === 'string')
+        return claims.email;
+    const profile = claims['https://api.openai.com/profile'];
+    if (profile?.email)
+        return profile.email;
+    return undefined;
+}
+export function getNameFromClaims(claims) {
+    if (!claims)
+        return undefined;
+    if (typeof claims.name === 'string' && claims.name.trim())
+        return claims.name.trim();
+    const givenName = typeof claims.given_name === 'string' ? claims.given_name.trim() : '';
+    const familyName = typeof claims.family_name === 'string' ? claims.family_name.trim() : '';
+    const combinedName = `${givenName} ${familyName}`.trim();
+    if (combinedName)
+        return combinedName;
+    const profile = claims['https://api.openai.com/profile'];
+    if (typeof profile?.name === 'string' && profile.name.trim())
+        return profile.name.trim();
+    return undefined;
+}
+export function getAccountIdFromClaims(claims) {
+    if (!claims)
+        return undefined;
+    const auth = claims['https://api.openai.com/auth'];
+    return auth?.chatgpt_account_id;
+}
+function getAccountUserIdFromClaims(claims) {
+    if (!claims)
+        return undefined;
+    const auth = claims['https://api.openai.com/auth'];
+    if (typeof auth?.chatgpt_account_user_id === 'string')
+        return auth.chatgpt_account_user_id;
+    return undefined;
+}
+function getUserIdFromClaims(claims) {
+    if (!claims)
+        return undefined;
+    const auth = claims['https://api.openai.com/auth'];
+    if (typeof auth?.user_id === 'string')
+        return auth.user_id;
+    if (typeof auth?.chatgpt_user_id === 'string')
+        return auth.chatgpt_user_id;
+    return undefined;
+}
+function getPlanTypeFromClaims(claims) {
+    if (!claims)
+        return undefined;
+    const auth = claims['https://api.openai.com/auth'];
+    if (typeof auth?.chatgpt_plan_type === 'string')
+        return auth.chatgpt_plan_type;
+    return undefined;
+}
+export function getExpiryFromClaims(claims) {
+    if (!claims)
+        return undefined;
+    const exp = claims.exp;
+    if (typeof exp === 'number')
+        return exp * 1000;
+    return undefined;
+}
+function fingerprintTokens(tokens) {
+    return `${tokens.access_token || ''}:${tokens.refresh_token || ''}:${tokens.id_token || ''}`;
+}
+function buildAlias(email, accountId, store) {
+    const base = email?.split('@')[0] || accountId?.slice(0, 8) || `account-${Date.now()}`;
+    const existing = new Set(Object.keys(store.accounts));
+    let candidate = base || `account-${Date.now()}`;
+    let suffix = 1;
+    while (existing.has(candidate)) {
+        candidate = `${base}-${suffix}`;
+        suffix += 1;
+    }
+    return candidate;
+}
+function findMatchingAlias(tokens, accountId, accountUserId, userId, email, store) {
+    for (const account of Object.values(store.accounts)) {
+        const existingAccountUserId = account.accountUserId ||
+            getAccountUserIdFromClaims(decodeJwtPayload(account.accessToken)) ||
+            (account.idToken ? getAccountUserIdFromClaims(decodeJwtPayload(account.idToken)) : undefined);
+        if (accountUserId) {
+            if (existingAccountUserId === accountUserId)
+                return account.alias;
+            continue;
+        }
+        const existingUserId = account.userId ||
+            getUserIdFromClaims(decodeJwtPayload(account.accessToken)) ||
+            (account.idToken ? getUserIdFromClaims(decodeJwtPayload(account.idToken)) : undefined);
+        if (userId && existingUserId === userId)
+            return account.alias;
+        if (tokens.access_token && account.accessToken === tokens.access_token)
+            return account.alias;
+        if (tokens.refresh_token && account.refreshToken === tokens.refresh_token)
+            return account.alias;
+        if (tokens.id_token && account.idToken === tokens.id_token)
+            return account.alias;
+        if (email && account.email === email)
+            return account.alias;
+        if (!userId && accountId && account.accountId === accountId)
+            return account.alias;
+    }
+    return null;
+}
+export function getCodexAuthSummary() {
+    const auth = loadCodexAuthFile();
+    const normalized = normalizeTokens(auth);
+    const access = normalized?.accessToken;
+    const refresh = normalized?.refreshToken;
+    const idToken = normalized?.idToken;
+    const accessClaims = access ? decodeJwtPayload(access) : null;
+    const idClaims = idToken ? decodeJwtPayload(idToken) : null;
+    const email = getEmailFromClaims(idClaims) || getEmailFromClaims(accessClaims);
+    const accountId = normalized?.accountId || getAccountIdFromClaims(idClaims) || getAccountIdFromClaims(accessClaims);
+    const accountUserId = getAccountUserIdFromClaims(accessClaims) || getAccountUserIdFromClaims(idClaims);
+    const userId = getUserIdFromClaims(accessClaims) || getUserIdFromClaims(idClaims);
+    const planType = getPlanTypeFromClaims(accessClaims) || getPlanTypeFromClaims(idClaims);
+    const expiresAt = getExpiryFromClaims(accessClaims) || getExpiryFromClaims(idClaims);
+    return {
+        email,
+        accountId,
+        accountUserId,
+        userId,
+        planType,
+        expiresAt,
+        lastRefresh: normalized?.lastRefresh,
+        hasAccessToken: Boolean(access),
+        hasRefreshToken: Boolean(refresh),
+        hasIdToken: Boolean(idToken)
+    };
+}
+export function resolveAliasForCurrentAuth(store) {
+    const auth = loadCodexAuthFile();
+    const normalized = normalizeTokens(auth);
+    if (!normalized)
+        return null;
+    const accessClaims = normalized.accessToken ? decodeJwtPayload(normalized.accessToken) : null;
+    const idClaims = normalized.idToken ? decodeJwtPayload(normalized.idToken) : null;
+    const email = getEmailFromClaims(idClaims) || getEmailFromClaims(accessClaims);
+    const accountId = normalized.accountId || getAccountIdFromClaims(idClaims) || getAccountIdFromClaims(accessClaims);
+    const accountUserId = getAccountUserIdFromClaims(accessClaims) || getAccountUserIdFromClaims(idClaims);
+    const userId = getUserIdFromClaims(accessClaims) || getUserIdFromClaims(idClaims);
+    const targetStore = store ?? loadStore();
+    return findMatchingAlias({
+        access_token: normalized.accessToken,
+        refresh_token: normalized.refreshToken,
+        id_token: normalized.idToken
+    }, accountId, accountUserId, userId, email, targetStore);
+}
+export function syncCodexAuthFile() {
+    const auth = loadCodexAuthFile();
+    const normalized = normalizeTokens(auth);
+    if (!normalized?.accessToken || !normalized.refreshToken) {
+        lastAuthError = 'Missing access_token/refresh_token in auth.json';
+        const accessClaims = normalized?.accessToken ? decodeJwtPayload(normalized.accessToken) : null;
+        const idClaims = normalized?.idToken ? decodeJwtPayload(normalized.idToken) : null;
+        const email = getEmailFromClaims(idClaims) || getEmailFromClaims(accessClaims);
+        const accountId = normalized?.accountId || getAccountIdFromClaims(idClaims) || getAccountIdFromClaims(accessClaims);
+        return {
+            alias: null,
+            added: false,
+            updated: false,
+            authEmail: email,
+            authAccountId: accountId
+        };
+    }
+    const tokens = {
+        access_token: normalized.accessToken,
+        refresh_token: normalized.refreshToken,
+        id_token: normalized.idToken,
+        account_id: normalized.accountId
+    };
+    const fingerprint = fingerprintTokens(tokens);
+    const accessClaims = decodeJwtPayload(normalized.accessToken);
+    const idClaims = normalized.idToken ? decodeJwtPayload(normalized.idToken) : null;
+    const email = getEmailFromClaims(idClaims) || getEmailFromClaims(accessClaims);
+    const name = getNameFromClaims(idClaims) || getNameFromClaims(accessClaims);
+    const accountId = normalized.accountId || getAccountIdFromClaims(idClaims) || getAccountIdFromClaims(accessClaims);
+    const accountUserId = getAccountUserIdFromClaims(accessClaims) || getAccountUserIdFromClaims(idClaims);
+    const userId = getUserIdFromClaims(accessClaims) || getUserIdFromClaims(idClaims);
+    const planType = getPlanTypeFromClaims(accessClaims) || getPlanTypeFromClaims(idClaims);
+    const expiresAt = getExpiryFromClaims(accessClaims) || getExpiryFromClaims(idClaims) || Date.now();
+    const store = loadStore();
+    const now = Date.now();
+    const alias = findMatchingAlias(tokens, accountId, accountUserId, userId, email, store);
+    if (lastFingerprint === fingerprint && alias) {
+        return { alias, added: false, updated: false, authEmail: email, authAccountId: accountId };
+    }
+    lastFingerprint = fingerprint;
+    const update = {
+        accessToken: normalized.accessToken,
+        refreshToken: normalized.refreshToken,
+        accountId,
+        accountUserId,
+        userId,
+        planType,
+        expiresAt,
+        email,
+        name,
+        lastRefresh: normalized.lastRefresh,
+        lastSeenAt: now,
+        source: 'codex'
+    };
+    if (normalized.idToken) {
+        update.idToken = normalized.idToken;
+    }
+    if (alias) {
+        updateAccount(alias, update);
+        return { alias, added: false, updated: true, authEmail: email, authAccountId: accountId };
+    }
+    const newAlias = buildAlias(email, accountId, store);
+    addAccount(newAlias, update);
+    return { alias: newAlias, added: true, updated: true, authEmail: email, authAccountId: accountId };
+}
+export function getCodexAuthStatus() {
+    return { error: lastAuthError };
+}
+export function writeCodexAuthForAlias(alias) {
+    const store = loadStore();
+    const account = store.accounts[alias];
+    if (!account) {
+        throw new Error(`Unknown alias: ${alias}`);
+    }
+    if (!account.accessToken || !account.refreshToken) {
+        throw new Error('Missing token data for alias');
+    }
+    const current = loadCodexAuthFile();
+    const baseTokens = {
+        access_token: account.accessToken,
+        refresh_token: account.refreshToken
+    };
+    if (account.idToken) {
+        baseTokens.id_token = account.idToken;
+    }
+    if (account.accountId) {
+        baseTokens.account_id = account.accountId;
+    }
+    const auth = {
+        OPENAI_API_KEY: current?.OPENAI_API_KEY ?? null,
+        tokens: baseTokens,
+        last_refresh: new Date().toISOString()
+    };
+    writeCodexAuthFile(auth);
+    updateAccount(alias, {
+        lastRefresh: auth.last_refresh,
+        lastSeenAt: Date.now(),
+        source: 'codex'
+    });
+}
+//# sourceMappingURL=codex-auth.js.map
