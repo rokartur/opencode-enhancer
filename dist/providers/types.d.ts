@@ -1,5 +1,5 @@
-export type BillingType = 'quotaBased' | 'payAsYouGo';
-export type ProviderStatus = 'ok' | 'error' | 'not_configured' | 'auth_expired';
+export type BillingType = "quotaBased" | "payAsYouGo";
+export type ProviderStatus = "ok" | "error" | "not_configured" | "auth_expired";
 export declare const DEFAULT_PROVIDER_TIMEOUT_MS = 12000;
 export declare function fetchWithTimeout(url: string, init?: RequestInit, timeoutMs?: number): Promise<Response>;
 export interface UsageWindow {
@@ -9,9 +9,13 @@ export interface UsageWindow {
     resetsAt?: number;
     /** Human-readable window label (e.g. "5h", "7d", "weekly") */
     label: string;
+    /** Requests/credits remaining within this window (if available) */
+    remaining?: number;
+    /** Total entitlement within this window (if available) */
+    entitlement?: number;
 }
 export interface QuotaBasedUsage {
-    type: 'quotaBased';
+    type: "quotaBased";
     /** Primary usage percentage (0-100), most relevant window */
     utilization: number;
     /** Individual usage windows */
@@ -22,7 +26,7 @@ export interface QuotaBasedUsage {
     entitlement?: number;
 }
 export interface PayAsYouGoUsage {
-    type: 'payAsYouGo';
+    type: "payAsYouGo";
     /** Cost utilization as percentage of total credits */
     utilization: number;
     /** Amount used in dollars */

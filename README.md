@@ -1,6 +1,6 @@
 # opencode-enhancer
 
-OpenCode enhancer for Codex accounts, usage tracking, plugin updates, and future automation.
+OpenCode enhancer for Codex accounts, usage tracking, plugin updates.
 
 ## What It Does
 
