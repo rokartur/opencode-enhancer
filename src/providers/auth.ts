@@ -1,9 +1,10 @@
 // Read auth tokens from OpenCode's auth.json file
 // Located at ~/.local/share/opencode/auth.json (XDG_DATA_HOME/opencode/auth.json)
 
-import { readFileSync, existsSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 
 const require = createRequire(import.meta.url);
@@ -219,19 +220,132 @@ export interface GeminiOAuthCreds {
   refresh_token: string;
 }
 
+interface GeminiOAuthClientConfig {
+  client_id: string;
+  client_secret: string;
+}
+
+let cachedGeminiCliOAuthClient: GeminiOAuthClientConfig | null | undefined;
+
+function getGeminiCliBundleCandidates(): string[] {
+  const candidates = new Set<string>();
+  const home = homedir();
+
+  if (process.env.GEMINI_CLI_BUNDLE_DIR) {
+    candidates.add(process.env.GEMINI_CLI_BUNDLE_DIR);
+  }
+
+  for (const candidate of [
+    "/opt/homebrew/lib/node_modules/@google/gemini-cli/bundle",
+    "/usr/local/lib/node_modules/@google/gemini-cli/bundle",
+    join(home, ".npm-global", "lib", "node_modules", "@google", "gemini-cli", "bundle"),
+    join(home, ".volta", "tools", "image", "packages", "@google", "gemini-cli", "bundle"),
+  ]) {
+    candidates.add(candidate);
+  }
+
+  for (const cellarPath of ["/opt/homebrew/Cellar/gemini-cli", "/usr/local/Cellar/gemini-cli"]) {
+    if (!existsSync(cellarPath)) continue;
+    try {
+      for (const version of readdirSync(cellarPath)) {
+        candidates.add(
+          join(
+            cellarPath,
+            version,
+            "libexec",
+            "lib",
+            "node_modules",
+            "@google",
+            "gemini-cli",
+            "bundle",
+          ),
+        );
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  try {
+    const whichResult = spawnSync("which", ["gemini"], { encoding: "utf8" });
+    const geminiPath = whichResult.stdout.trim();
+    if (geminiPath) {
+      const resolved = realpathSync(geminiPath);
+      const resolvedDir = dirname(resolved);
+      candidates.add(
+        join(resolvedDir, "..", "lib", "node_modules", "@google", "gemini-cli", "bundle"),
+      );
+      candidates.add(
+        join(
+          resolvedDir,
+          "..",
+          "..",
+          "libexec",
+          "lib",
+          "node_modules",
+          "@google",
+          "gemini-cli",
+          "bundle",
+        ),
+      );
+    }
+  } catch {
+    // Ignore missing gemini binary.
+  }
+
+  return [...candidates];
+}
+
+function loadGeminiCliOAuthClient(): GeminiOAuthClientConfig | undefined {
+  if (cachedGeminiCliOAuthClient !== undefined) {
+    return cachedGeminiCliOAuthClient ?? undefined;
+  }
+
+  const clientIdPattern = /var\s+OAUTH_CLIENT_ID\s*=\s*"([^"]+\.apps\.googleusercontent\.com)"/;
+  const clientSecretPattern = /var\s+OAUTH_CLIENT_SECRET\s*=\s*"([^"]+)"/;
+  const fallbackClientIdPattern = /"([0-9]{12}-[a-z0-9]+\.apps\.googleusercontent\.com)"/i;
+  const fallbackClientSecretPattern = /"(GOCSPX-[^"]+)"/;
+
+  for (const bundleDir of getGeminiCliBundleCandidates()) {
+    if (!existsSync(bundleDir)) continue;
+    try {
+      for (const entry of readdirSync(bundleDir)) {
+        if (!entry.endsWith(".js")) continue;
+        const source = readFileSync(join(bundleDir, entry), "utf-8");
+        const clientId =
+          source.match(clientIdPattern)?.[1] || source.match(fallbackClientIdPattern)?.[1];
+        const clientSecret =
+          source.match(clientSecretPattern)?.[1] || source.match(fallbackClientSecretPattern)?.[1];
+        if (clientId && clientSecret) {
+          cachedGeminiCliOAuthClient = { client_id: clientId, client_secret: clientSecret };
+          return cachedGeminiCliOAuthClient;
+        }
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  cachedGeminiCliOAuthClient = null;
+  return undefined;
+}
+
 function buildGeminiOAuthCreds(
   refreshToken: string,
   clientId?: string,
   clientSecret?: string,
 ): GeminiOAuthCreds | undefined {
+  const geminiCliOAuthClient = loadGeminiCliOAuthClient();
   const resolvedClientId =
     clientId ||
     process.env.OPENCODE_ENHANCER_GOOGLE_CLIENT_ID ||
-    process.env.OPENCODE_MULTI_AUTH_GOOGLE_CLIENT_ID;
+    process.env.OPENCODE_MULTI_AUTH_GOOGLE_CLIENT_ID ||
+    geminiCliOAuthClient?.client_id;
   const resolvedClientSecret =
     clientSecret ||
     process.env.OPENCODE_ENHANCER_GOOGLE_CLIENT_SECRET ||
-    process.env.OPENCODE_MULTI_AUTH_GOOGLE_CLIENT_SECRET;
+    process.env.OPENCODE_MULTI_AUTH_GOOGLE_CLIENT_SECRET ||
+    geminiCliOAuthClient?.client_secret;
 
   if (!resolvedClientId || !resolvedClientSecret) return undefined;
 
