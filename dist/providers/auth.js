@@ -1,35 +1,35 @@
 // Read auth tokens from OpenCode's auth.json file
 // Located at ~/.local/share/opencode/auth.json (XDG_DATA_HOME/opencode/auth.json)
-import { readFileSync, existsSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
+import { readFileSync, existsSync } from "node:fs";
+import { createRequire } from "node:module";
+import { join } from "node:path";
+import { homedir } from "node:os";
 const require = createRequire(import.meta.url);
 let cachedAuth = null;
 let cacheTimestamp = 0;
 const CACHE_TTL_MS = 10_000; // 10 seconds
 const AUTH_KEY_ALIASES = {
-    opencode: ['opencode-go'],
-    'opencode-go': ['opencode'],
-    google: ['google.oauth'],
-    'google.oauth': ['google'],
+    opencode: ["opencode-go"],
+    "opencode-go": ["opencode"],
+    google: ["google.oauth"],
+    "google.oauth": ["google"],
 };
 function getAuthFileCandidates() {
-    const xdgData = process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share');
-    const xdgConfig = process.env.XDG_CONFIG_HOME || join(homedir(), '.config');
+    const xdgData = process.env.XDG_DATA_HOME || join(homedir(), ".local", "share");
+    const xdgConfig = process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
     const candidates = [
-        join(xdgData, 'opencode', 'auth.json'),
-        join(xdgData, 'opencode', 'auth.js'),
-        join(xdgConfig, 'opencode', 'auth.json'),
-        join(xdgConfig, 'opencode', 'auth.js'),
+        join(xdgData, "opencode", "auth.json"),
+        join(xdgData, "opencode", "auth.js"),
+        join(xdgConfig, "opencode", "auth.json"),
+        join(xdgConfig, "opencode", "auth.js"),
     ];
     return [...new Set(candidates)];
 }
 function getAuthFilePath() {
-    return getAuthFileCandidates().find((filePath) => existsSync(filePath)) || getAuthFileCandidates()[0];
+    return (getAuthFileCandidates().find((filePath) => existsSync(filePath)) || getAuthFileCandidates()[0]);
 }
 function parseAuthObject(value) {
-    if (!value || typeof value !== 'object' || Array.isArray(value))
+    if (!value || typeof value !== "object" || Array.isArray(value))
         return undefined;
     return value;
 }
@@ -37,11 +37,13 @@ function parseAuthJsSource(raw) {
     const trimmed = raw.trim();
     const candidates = [
         trimmed,
-        trimmed.replace(/^export\s+default\s+/, '').replace(/;\s*$/, ''),
-        trimmed.replace(/^module\.exports\s*=\s*/, '').replace(/;\s*$/, ''),
+        trimmed.replace(/^export\s+default\s+/, "").replace(/;\s*$/, ""),
+        trimmed.replace(/^module\.exports\s*=\s*/, "").replace(/;\s*$/, ""),
     ];
     for (const candidate of candidates) {
-        if (!candidate || candidate === trimmed && (trimmed.startsWith('export ') || trimmed.startsWith('module.exports'))) {
+        if (!candidate ||
+            (candidate === trimmed &&
+                (trimmed.startsWith("export ") || trimmed.startsWith("module.exports")))) {
             continue;
         }
         try {
@@ -58,7 +60,7 @@ function parseAuthJsSource(raw) {
 }
 function loadAuthFromPath(filePath) {
     try {
-        const raw = readFileSync(filePath, 'utf-8');
+        const raw = readFileSync(filePath, "utf-8");
         const fromJson = parseAuthObject(JSON.parse(raw));
         if (fromJson)
             return fromJson;
@@ -66,7 +68,7 @@ function loadAuthFromPath(filePath) {
     catch {
         // Fall through to .js parsing / require below.
     }
-    if (!filePath.endsWith('.js'))
+    if (!filePath.endsWith(".js"))
         return undefined;
     try {
         const resolved = require.resolve(filePath);
@@ -80,7 +82,7 @@ function loadAuthFromPath(filePath) {
         // Fall through to raw object-literal parsing.
     }
     try {
-        const raw = readFileSync(filePath, 'utf-8');
+        const raw = readFileSync(filePath, "utf-8");
         return parseAuthJsSource(raw);
     }
     catch {
@@ -123,7 +125,7 @@ function loadAuthFile() {
 export function getOAuthToken(key) {
     const auth = loadAuthFile();
     const cred = getCredential(auth, key);
-    if (!cred || cred.type !== 'oauth')
+    if (!cred || cred.type !== "oauth")
         return undefined;
     return cred.access || undefined;
 }
@@ -131,7 +133,7 @@ export function getOAuthToken(key) {
 export function getOAuthRefreshToken(key) {
     const auth = loadAuthFile();
     const cred = getCredential(auth, key);
-    if (!cred || cred.type !== 'oauth')
+    if (!cred || cred.type !== "oauth")
         return undefined;
     return cred.refresh || undefined;
 }
@@ -139,7 +141,7 @@ export function getOAuthRefreshToken(key) {
 export function getOAuthCredential(key) {
     const auth = loadAuthFile();
     const cred = getCredential(auth, key);
-    if (!cred || cred.type !== 'oauth')
+    if (!cred || cred.type !== "oauth")
         return undefined;
     return cred;
 }
@@ -149,10 +151,10 @@ export function getApiKey(key) {
     const cred = getCredential(auth, key);
     if (!cred)
         return undefined;
-    if (cred.type === 'apikey' || cred.type === 'api')
+    if (cred.type === "apikey" || cred.type === "api")
         return cred.key || undefined;
     // Some providers may store key in access field with oauth type
-    if (cred.type === 'oauth')
+    if (cred.type === "oauth")
         return cred.access || undefined;
     return undefined;
 }
@@ -162,9 +164,9 @@ export function hasCredential(key) {
     const cred = getCredential(auth, key);
     if (!cred)
         return false;
-    if (cred.type === 'apikey' || cred.type === 'api')
+    if (cred.type === "apikey" || cred.type === "api")
         return !!cred.key;
-    if (cred.type === 'oauth')
+    if (cred.type === "oauth")
         return !!cred.access;
     return false;
 }
@@ -177,27 +179,41 @@ export function invalidateAuthCache() {
 export function getAuthPath() {
     return getAuthFilePath();
 }
+function buildGeminiOAuthCreds(refreshToken, clientId, clientSecret) {
+    const resolvedClientId = clientId ||
+        process.env.OPENCODE_ENHANCER_GOOGLE_CLIENT_ID ||
+        process.env.OPENCODE_MULTI_AUTH_GOOGLE_CLIENT_ID;
+    const resolvedClientSecret = clientSecret ||
+        process.env.OPENCODE_ENHANCER_GOOGLE_CLIENT_SECRET ||
+        process.env.OPENCODE_MULTI_AUTH_GOOGLE_CLIENT_SECRET;
+    if (!resolvedClientId || !resolvedClientSecret)
+        return undefined;
+    return {
+        client_id: resolvedClientId,
+        client_secret: resolvedClientSecret,
+        refresh_token: refreshToken,
+    };
+}
 export function getGeminiOAuthCreds() {
     // Try multiple locations
     const paths = [
-        join(homedir(), '.gemini', 'oauth_creds.json'),
-        join(homedir(), '.config', 'opencode', 'antigravity-accounts.json'),
+        join(homedir(), ".gemini", "oauth_creds.json"),
+        join(homedir(), ".config", "opencode", "antigravity-accounts.json"),
     ];
     for (const p of paths) {
         if (!existsSync(p))
             continue;
         try {
-            const raw = readFileSync(p, 'utf-8');
+            const raw = readFileSync(p, "utf-8");
             const parsed = JSON.parse(raw);
-            // Direct oauth_creds.json format
-            if (parsed.client_id && parsed.refresh_token) {
-                return parsed;
+            if (parsed.refresh_token) {
+                return buildGeminiOAuthCreds(parsed.refresh_token, parsed.client_id, parsed.client_secret);
             }
             // Antigravity accounts format — take first account
             if (Array.isArray(parsed)) {
                 const first = parsed[0];
-                if (first?.client_id && first?.refresh_token) {
-                    return first;
+                if (first?.refresh_token) {
+                    return buildGeminiOAuthCreds(first.refresh_token, first.client_id, first.client_secret);
                 }
             }
         }
@@ -207,17 +223,9 @@ export function getGeminiOAuthCreds() {
     }
     // Also check opencode auth.json for google.oauth
     const auth = loadAuthFile();
-    const googleOAuth = auth['google.oauth'] || auth['google'];
-    if (googleOAuth && googleOAuth.type === 'oauth' && googleOAuth.refresh) {
-        const clientId = process.env.OPENCODE_ENHANCER_GOOGLE_CLIENT_ID || process.env.OPENCODE_MULTI_AUTH_GOOGLE_CLIENT_ID || '';
-        const clientSecret = process.env.OPENCODE_ENHANCER_GOOGLE_CLIENT_SECRET || process.env.OPENCODE_MULTI_AUTH_GOOGLE_CLIENT_SECRET || '';
-        if (!clientId || !clientSecret)
-            return undefined;
-        return {
-            client_id: clientId,
-            client_secret: clientSecret,
-            refresh_token: googleOAuth.refresh,
-        };
+    const googleOAuth = auth["google.oauth"] || auth["google"];
+    if (googleOAuth && googleOAuth.type === "oauth" && googleOAuth.refresh) {
+        return buildGeminiOAuthCreds(googleOAuth.refresh);
     }
     return undefined;
 }
