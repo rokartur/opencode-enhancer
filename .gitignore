@@ -6,8 +6,4 @@ node
 .env
 .env.*
 !.env.example
-
-# Auto-login
-auto-login/credentials.json
-auto-login/debug_*.png
-auto-login/__pycache__/
+dist
