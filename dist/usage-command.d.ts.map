@@ -1,1 +1,0 @@
-{"version":3,"file":"usage-command.d.ts","sourceRoot":"","sources":["../src/usage-command.ts"],"names":[],"mappings":"AAyvBA,MAAM,WAAW,mBAAmB;IAClC,QAAQ,CAAC,EAAE,MAAM,CAAC;IAClB,IAAI,CAAC,EAAE,OAAO,CAAC;IACf,OAAO,CAAC,EAAE,OAAO,CAAC;IAClB,OAAO,CAAC,EAAE,OAAO,CAAC;CACnB;AAeD,wBAAsB,eAAe,CAAC,IAAI,EAAE,mBAAmB,GAAG,OAAO,CAAC,IAAI,CAAC,CAyD9E"}

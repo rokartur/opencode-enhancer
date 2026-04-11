@@ -1,1 +1,0 @@
-{"version":3,"file":"plugin-updates.d.ts","sourceRoot":"","sources":["../src/plugin-updates.ts"],"names":[],"mappings":"AAwBA,MAAM,WAAW,mBAAmB;IAClC,MAAM,CAAC,EAAE,OAAO,CAAA;IAChB,aAAa,CAAC,EAAE,OAAO,CAAA;IACvB,OAAO,CAAC,EAAE,MAAM,EAAE,CAAA;CACnB;AAuLD,wBAAsB,uBAAuB,CAAC,OAAO,EAAE,mBAAmB,GAAG,OAAO,CAAC,IAAI,CAAC,CAwGzF"}
