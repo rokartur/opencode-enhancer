@@ -3,14 +3,14 @@
 // Quotas: GET https://api.chutes.ai/users/me/quotas
 // Usage: GET https://api.chutes.ai/users/me/quota_usage/{chute_id}
 // Auth: raw key in Authorization header (no Bearer prefix)
-import { getApiKey, hasCredential } from './auth.js';
-import { fetchWithTimeout } from './types.js';
-const AUTH_KEY = 'chutes';
-const BASE_URL = 'https://api.chutes.ai';
+import { getApiKey, hasCredential } from "./auth.js";
+import { fetchWithTimeout } from "./types.js";
+const AUTH_KEY = "chutes";
+const BASE_URL = "https://api.chutes.ai";
 export const chutesProvider = {
-    id: 'chutes',
-    name: 'Chutes AI',
-    billingType: 'quotaBased',
+    id: "chutes",
+    name: "Chutes AI",
+    billingType: "quotaBased",
     async isConfigured() {
         return hasCredential(AUTH_KEY);
     },
@@ -21,7 +21,7 @@ export const chutesProvider = {
                 providerId: this.id,
                 providerName: this.name,
                 billingType: this.billingType,
-                status: 'not_configured',
+                status: "not_configured",
                 fetchedAt: Date.now(),
             };
         }
@@ -30,12 +30,12 @@ export const chutesProvider = {
             // Fetch quotas
             const quotasRes = await fetchWithTimeout(`${BASE_URL}/users/me/quotas`, { headers });
             if (!quotasRes.ok) {
-                const text = await quotasRes.text().catch(() => '');
+                const text = await quotasRes.text().catch(() => "");
                 return {
                     providerId: this.id,
                     providerName: this.name,
                     billingType: this.billingType,
-                    status: quotasRes.status === 401 || quotasRes.status === 403 ? 'auth_expired' : 'error',
+                    status: quotasRes.status === 401 || quotasRes.status === 403 ? "auth_expired" : "error",
                     error: `HTTP ${quotasRes.status}: ${text.slice(0, 200)}`,
                     fetchedAt: Date.now(),
                 };
@@ -47,8 +47,8 @@ export const chutesProvider = {
                     providerId: this.id,
                     providerName: this.name,
                     billingType: this.billingType,
-                    status: 'ok',
-                    usage: { type: 'quotaBased', utilization: 0, windows: [] },
+                    status: "ok",
+                    usage: { type: "quotaBased", utilization: 0, windows: [] },
                     fetchedAt: Date.now(),
                 };
             }
@@ -59,21 +59,24 @@ export const chutesProvider = {
             if (usageRes.ok) {
                 const usage = (await usageRes.json());
                 utilization = usage.quota > 0 ? (usage.used / usage.quota) * 100 : 0;
+                const remaining = usage.quota > 0 ? Math.max(0, usage.quota - usage.used) : undefined;
                 windows.push({
                     utilization,
                     resetsAt: defaultQuota.payment_refresh_date
                         ? new Date(defaultQuota.payment_refresh_date).getTime()
                         : undefined,
-                    label: 'monthly',
+                    label: "monthly",
+                    remaining,
+                    entitlement: usage.quota,
                 });
             }
             return {
                 providerId: this.id,
                 providerName: this.name,
                 billingType: this.billingType,
-                status: 'ok',
+                status: "ok",
                 usage: {
-                    type: 'quotaBased',
+                    type: "quotaBased",
                     utilization,
                     remaining: defaultQuota.quota
                         ? Math.max(0, defaultQuota.quota - (utilization * defaultQuota.quota) / 100)
@@ -89,7 +92,7 @@ export const chutesProvider = {
                 providerId: this.id,
                 providerName: this.name,
                 billingType: this.billingType,
-                status: 'error',
+                status: "error",
                 error: `${err}`,
                 fetchedAt: Date.now(),
             };

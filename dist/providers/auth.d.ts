@@ -1,5 +1,5 @@
 interface OAuthCredential {
-    type: 'oauth';
+    type: "oauth";
     access: string;
     refresh?: string;
     expires?: number;
