@@ -12,6 +12,7 @@
     "build": "tsc",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
+    "notify:smoke": "node ./scripts/notify-osc9-smoke.mjs",
     "release:check": "npm run lint && npm pack --dry-run",
     "prepack": "npm run build"
   },

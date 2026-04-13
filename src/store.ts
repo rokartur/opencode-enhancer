@@ -7,16 +7,27 @@ import type {
   AccountStore,
   AccountCredentials,
   RateLimitHistoryEntry,
-  RateLimitSnapshot
+  RateLimitSnapshot,
+  RotationSettings
 } from './types.js'
+import { sanitizeRotationSettings } from './types.js'
 
 const STORE_DIR_ENV = 'OPENCODE_ENHANCER_STORE_DIR'
 const STORE_FILE_ENV = 'OPENCODE_ENHANCER_STORE_FILE'
 const LEGACY_STORE_DIR_ENV = 'OPENCODE_MULTI_AUTH_STORE_DIR'
 const LEGACY_STORE_FILE_ENV = 'OPENCODE_MULTI_AUTH_STORE_FILE'
-const LEGACY_DEFAULT_STORE_DIR = path.join(os.homedir(), '.config', 'opencode-multi-auth')
-const DEFAULT_STORE_DIR = path.join(os.homedir(), '.config', 'opencode-enhancer')
-const DEFAULT_STORE_FILE = 'accounts.json'
+const LEGACY_DEFAULT_STORE_FILE = 'accounts.json'
+const LEGACY_DEFAULT_STORE_DIR = path.join(
+  os.homedir(),
+  '.config',
+  'opencode-multi-auth'
+)
+const DEFAULT_STORE_DIR = path.join(
+  os.homedir(),
+  '.config',
+  'opencode-enhancer'
+)
+const DEFAULT_STORE_FILE = 'settings.json'
 
 let storeCache: AccountStore | null = null
 let storeCacheDirty = false
@@ -38,31 +49,61 @@ function movePathIfMissing(source: string, target: string): void {
   fs.renameSync(source, target)
 }
 
+function migrateStoreArtifacts(
+  sourceDir: string,
+  sourceFile: string,
+  targetDir: string,
+  targetFile: string
+): void {
+  for (const suffix of ['', '.bak', '.lkg']) {
+    movePathIfMissing(
+      path.join(sourceDir, `${sourceFile}${suffix}`),
+      path.join(targetDir, `${targetFile}${suffix}`)
+    )
+  }
+}
+
 function migrateLegacyStoreLocation(): void {
   if (storeLocationChecked) return
   storeLocationChecked = true
 
-  if (getEnvPath(STORE_DIR_ENV, LEGACY_STORE_DIR_ENV, STORE_FILE_ENV, LEGACY_STORE_FILE_ENV)) {
+  if (
+    getEnvPath(
+      STORE_DIR_ENV,
+      LEGACY_STORE_DIR_ENV,
+      STORE_FILE_ENV,
+      LEGACY_STORE_FILE_ENV
+    )
+  ) {
     return
   }
 
-  if (fs.existsSync(LEGACY_DEFAULT_STORE_DIR) && !fs.existsSync(DEFAULT_STORE_DIR)) {
+  if (
+    fs.existsSync(LEGACY_DEFAULT_STORE_DIR) &&
+    !fs.existsSync(DEFAULT_STORE_DIR)
+  ) {
     try {
       fs.renameSync(LEGACY_DEFAULT_STORE_DIR, DEFAULT_STORE_DIR)
-      return
     } catch {
       // Fall back to moving individual store artifacts.
     }
   }
 
+  migrateStoreArtifacts(
+    DEFAULT_STORE_DIR,
+    LEGACY_DEFAULT_STORE_FILE,
+    DEFAULT_STORE_DIR,
+    DEFAULT_STORE_FILE
+  )
+
   if (!fs.existsSync(LEGACY_DEFAULT_STORE_DIR)) return
 
-  for (const suffix of ['', '.bak', '.lkg']) {
-    movePathIfMissing(
-      path.join(LEGACY_DEFAULT_STORE_DIR, `${DEFAULT_STORE_FILE}${suffix}`),
-      path.join(DEFAULT_STORE_DIR, `${DEFAULT_STORE_FILE}${suffix}`)
-    )
-  }
+  migrateStoreArtifacts(
+    LEGACY_DEFAULT_STORE_DIR,
+    LEGACY_DEFAULT_STORE_FILE,
+    DEFAULT_STORE_DIR,
+    DEFAULT_STORE_FILE
+  )
 }
 
 function getStoreDir(): string {
@@ -105,10 +146,13 @@ type StoreFileV2 = StoreFileV1 & {
   forcedUntil?: number | null
   previousRotationStrategy?: string | null
   forcedBy?: string | null
-  rotationStrategy?: 'round-robin' | 'least-used' | 'random' | 'weighted-round-robin' | 'usage-priority'
-  settings?: {
-    rotationStrategy?: 'round-robin' | 'least-used' | 'random' | 'weighted-round-robin' | 'usage-priority'
-  }
+  rotationStrategy?:
+    | 'round-robin'
+    | 'least-used'
+    | 'random'
+    | 'weighted-round-robin'
+    | 'usage-priority'
+  settings?: Partial<RotationSettings>
   force?: {
     forcedAlias: string | null
     forcedUntil: number | null
@@ -143,25 +187,35 @@ function emptyStore(): AccountStore {
 }
 
 function getPassphrase(): string | null {
-  const value = process.env[STORE_ENV_PASSPHRASE] || process.env[LEGACY_STORE_ENV_PASSPHRASE]
+  const value =
+    process.env[STORE_ENV_PASSPHRASE] ||
+    process.env[LEGACY_STORE_ENV_PASSPHRASE]
   return value && value.trim().length > 0 ? value : null
 }
 
 function isEncryptedFile(payload: any): payload is EncryptedStoreFile {
-  return Boolean(payload && payload.encrypted === true && typeof payload.data === 'string')
+  return Boolean(
+    payload && payload.encrypted === true && typeof payload.data === 'string'
+  )
 }
 
 function deriveKey(passphrase: string, salt: Buffer): Buffer {
   return crypto.scryptSync(passphrase, salt, 32)
 }
 
-function encryptStore(store: AccountStore, passphrase: string): EncryptedStoreFile {
+function encryptStore(
+  store: AccountStore,
+  passphrase: string
+): EncryptedStoreFile {
   const salt = crypto.randomBytes(16)
   const iv = crypto.randomBytes(12)
   const key = deriveKey(passphrase, salt)
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv)
   const serialized = JSON.stringify(store)
-  const encrypted = Buffer.concat([cipher.update(serialized, 'utf8'), cipher.final()])
+  const encrypted = Buffer.concat([
+    cipher.update(serialized, 'utf8'),
+    cipher.final()
+  ])
   const tag = cipher.getAuthTag()
   return {
     encrypted: true,
@@ -173,7 +227,10 @@ function encryptStore(store: AccountStore, passphrase: string): EncryptedStoreFi
   }
 }
 
-function decryptStore(file: EncryptedStoreFile, passphrase: string): AccountStore {
+function decryptStore(
+  file: EncryptedStoreFile,
+  passphrase: string
+): AccountStore {
   const salt = Buffer.from(file.salt, 'base64')
   const iv = Buffer.from(file.iv, 'base64')
   const tag = Buffer.from(file.tag, 'base64')
@@ -181,7 +238,10 @@ function decryptStore(file: EncryptedStoreFile, passphrase: string): AccountStor
   const key = deriveKey(passphrase, salt)
   const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv)
   decipher.setAuthTag(tag)
-  const decrypted = Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8')
+  const decrypted = Buffer.concat([
+    decipher.update(data),
+    decipher.final()
+  ]).toString('utf8')
   return JSON.parse(decrypted) as AccountStore
 }
 
@@ -193,10 +253,15 @@ function validateAccount(acc: any, alias: string): AccountCredentials | null {
 
   const rateLimitHistory = Array.isArray(acc.rateLimitHistory)
     ? acc.rateLimitHistory.filter((entry: any) =>
-        hasMeaningfulRateLimits({ fiveHour: entry?.fiveHour, weekly: entry?.weekly })
+        hasMeaningfulRateLimits({
+          fiveHour: entry?.fiveHour,
+          weekly: entry?.weekly
+        })
       )
     : undefined
-  const rateLimits = hasMeaningfulRateLimits(acc.rateLimits) ? acc.rateLimits : undefined
+  const rateLimits = hasMeaningfulRateLimits(acc.rateLimits)
+    ? acc.rateLimits
+    : undefined
 
   return {
     alias,
@@ -204,37 +269,79 @@ function validateAccount(acc: any, alias: string): AccountCredentials | null {
     refreshToken: acc.refreshToken,
     idToken: typeof acc.idToken === 'string' ? acc.idToken : undefined,
     accountId: typeof acc.accountId === 'string' ? acc.accountId : undefined,
-    accountUserId: typeof acc.accountUserId === 'string' ? acc.accountUserId : undefined,
+    accountUserId:
+      typeof acc.accountUserId === 'string' ? acc.accountUserId : undefined,
     userId: typeof acc.userId === 'string' ? acc.userId : undefined,
     expiresAt: acc.expiresAt,
     email: typeof acc.email === 'string' ? acc.email : undefined,
     name: typeof acc.name === 'string' ? acc.name : undefined,
-    lastRefresh: typeof acc.lastRefresh === 'string' ? acc.lastRefresh : undefined,
+    lastRefresh:
+      typeof acc.lastRefresh === 'string' ? acc.lastRefresh : undefined,
     lastSeenAt: typeof acc.lastSeenAt === 'number' ? acc.lastSeenAt : undefined,
-    lastActiveUntil: typeof acc.lastActiveUntil === 'number' ? acc.lastActiveUntil : undefined,
+    lastActiveUntil:
+      typeof acc.lastActiveUntil === 'number' ? acc.lastActiveUntil : undefined,
     lastUsed: typeof acc.lastUsed === 'number' ? acc.lastUsed : undefined,
     usageCount: typeof acc.usageCount === 'number' ? acc.usageCount : 0,
-    rateLimitedUntil: typeof acc.rateLimitedUntil === 'number' ? acc.rateLimitedUntil : undefined,
-    modelUnsupportedUntil: typeof acc.modelUnsupportedUntil === 'number' ? acc.modelUnsupportedUntil : undefined,
-    modelUnsupportedAt: typeof acc.modelUnsupportedAt === 'number' ? acc.modelUnsupportedAt : undefined,
-    modelUnsupportedModel: typeof acc.modelUnsupportedModel === 'string' ? acc.modelUnsupportedModel : undefined,
-    modelUnsupportedError: typeof acc.modelUnsupportedError === 'string' ? acc.modelUnsupportedError : undefined,
-    workspaceDeactivatedUntil: typeof acc.workspaceDeactivatedUntil === 'number' ? acc.workspaceDeactivatedUntil : undefined,
-    workspaceDeactivatedAt: typeof acc.workspaceDeactivatedAt === 'number' ? acc.workspaceDeactivatedAt : undefined,
-    workspaceDeactivatedError: typeof acc.workspaceDeactivatedError === 'string' ? acc.workspaceDeactivatedError : undefined,
-    authInvalid: typeof acc.authInvalid === 'boolean' ? acc.authInvalid : undefined,
-    authInvalidatedAt: typeof acc.authInvalidatedAt === 'number' ? acc.authInvalidatedAt : undefined,
+    rateLimitedUntil:
+      typeof acc.rateLimitedUntil === 'number'
+        ? acc.rateLimitedUntil
+        : undefined,
+    modelUnsupportedUntil:
+      typeof acc.modelUnsupportedUntil === 'number'
+        ? acc.modelUnsupportedUntil
+        : undefined,
+    modelUnsupportedAt:
+      typeof acc.modelUnsupportedAt === 'number'
+        ? acc.modelUnsupportedAt
+        : undefined,
+    modelUnsupportedModel:
+      typeof acc.modelUnsupportedModel === 'string'
+        ? acc.modelUnsupportedModel
+        : undefined,
+    modelUnsupportedError:
+      typeof acc.modelUnsupportedError === 'string'
+        ? acc.modelUnsupportedError
+        : undefined,
+    workspaceDeactivatedUntil:
+      typeof acc.workspaceDeactivatedUntil === 'number'
+        ? acc.workspaceDeactivatedUntil
+        : undefined,
+    workspaceDeactivatedAt:
+      typeof acc.workspaceDeactivatedAt === 'number'
+        ? acc.workspaceDeactivatedAt
+        : undefined,
+    workspaceDeactivatedError:
+      typeof acc.workspaceDeactivatedError === 'string'
+        ? acc.workspaceDeactivatedError
+        : undefined,
+    authInvalid:
+      typeof acc.authInvalid === 'boolean' ? acc.authInvalid : undefined,
+    authInvalidatedAt:
+      typeof acc.authInvalidatedAt === 'number'
+        ? acc.authInvalidatedAt
+        : undefined,
     // Phase D: Account availability fields
     enabled: typeof acc.enabled === 'boolean' ? acc.enabled : undefined,
     disabledAt: typeof acc.disabledAt === 'number' ? acc.disabledAt : undefined,
     disabledBy: typeof acc.disabledBy === 'string' ? acc.disabledBy : undefined,
-    disableReason: typeof acc.disableReason === 'string' ? acc.disableReason : undefined,
+    disableReason:
+      typeof acc.disableReason === 'string' ? acc.disableReason : undefined,
     rateLimits,
-    rateLimitHistory: rateLimitHistory && rateLimitHistory.length > 0 ? rateLimitHistory : undefined,
-    limitStatus: typeof acc.limitStatus === 'string' ? acc.limitStatus : undefined,
+    rateLimitHistory:
+      rateLimitHistory && rateLimitHistory.length > 0
+        ? rateLimitHistory
+        : undefined,
+    limitStatus:
+      typeof acc.limitStatus === 'string' ? acc.limitStatus : undefined,
     limitError: typeof acc.limitError === 'string' ? acc.limitError : undefined,
-    lastLimitProbeAt: typeof acc.lastLimitProbeAt === 'number' ? acc.lastLimitProbeAt : undefined,
-    lastLimitErrorAt: typeof acc.lastLimitErrorAt === 'number' ? acc.lastLimitErrorAt : undefined,
+    lastLimitProbeAt:
+      typeof acc.lastLimitProbeAt === 'number'
+        ? acc.lastLimitProbeAt
+        : undefined,
+    lastLimitErrorAt:
+      typeof acc.lastLimitErrorAt === 'number'
+        ? acc.lastLimitErrorAt
+        : undefined,
     limitsConfidence:
       acc.limitsConfidence === 'fresh' ||
       acc.limitsConfidence === 'stale' ||
@@ -244,14 +351,17 @@ function validateAccount(acc: any, alias: string): AccountCredentials | null {
         : undefined,
     tags: Array.isArray(acc.tags) ? acc.tags : undefined,
     notes: typeof acc.notes === 'string' ? acc.notes : undefined,
-    source: acc.source === 'opencode' || acc.source === 'codex' ? acc.source : undefined
+    source:
+      acc.source === 'opencode' || acc.source === 'codex'
+        ? acc.source
+        : undefined
   }
 }
 
 function validateStore(data: any): AccountStore | null {
   if (!data || typeof data !== 'object') return null
   const force = data.force && typeof data.force === 'object' ? data.force : null
-  
+
   const accounts: Record<string, AccountCredentials> = {}
   const rawAccounts = data.accounts
   if (rawAccounts && typeof rawAccounts === 'object') {
@@ -262,13 +372,15 @@ function validateStore(data: any): AccountStore | null {
       }
     }
   }
-  
+
   return {
     version: typeof data.version === 'number' ? data.version : undefined,
     accounts,
     activeAlias: typeof data.activeAlias === 'string' ? data.activeAlias : null,
-    rotationIndex: typeof data.rotationIndex === 'number' ? data.rotationIndex : 0,
-    lastRotation: typeof data.lastRotation === 'number' ? data.lastRotation : Date.now(),
+    rotationIndex:
+      typeof data.rotationIndex === 'number' ? data.rotationIndex : 0,
+    lastRotation:
+      typeof data.lastRotation === 'number' ? data.lastRotation : Date.now(),
     forcedAlias:
       typeof data.forcedAlias === 'string'
         ? data.forcedAlias
@@ -293,8 +405,9 @@ function validateStore(data: any): AccountStore | null {
         : typeof force?.forcedBy === 'string'
           ? force.forcedBy
           : null,
-    rotationStrategy: data.rotationStrategy ?? data.settings?.rotationStrategy ?? 'round-robin',
-    settings: data.settings ?? undefined
+    rotationStrategy:
+      data.rotationStrategy ?? data.settings?.rotationStrategy ?? 'round-robin',
+    settings: sanitizeRotationSettings(data.settings)
   }
 }
 
@@ -315,20 +428,22 @@ function migrateV1toV2(data: StoreFileV1): StoreFileV2 {
 
 function migrateStore(data: any): AccountStore | null {
   if (!data || typeof data !== 'object') return null
-  
+
   const version = typeof data.version === 'number' ? data.version : 1
-  
+
   if (version > CURRENT_STORE_VERSION) {
-    console.warn(`[enhancer] Store version ${version} is newer than supported ${CURRENT_STORE_VERSION}. Proceeding with caution.`)
+    console.warn(
+      `[enhancer] Store version ${version} is newer than supported ${CURRENT_STORE_VERSION}. Proceeding with caution.`
+    )
     return validateStore(data)
   }
-  
+
   let migrated: any = data
   if (version === 1) {
     migrated = migrateV1toV2(data as StoreFileV1)
     console.log('[enhancer] Migrated store from v1 to v2')
   }
-  
+
   return validateStore(migrated)
 }
 
@@ -381,7 +496,11 @@ function releaseWriteLock(): void {
   }
 }
 
-function buildSnapshot(window?: { remaining?: number; limit?: number; resetAt?: number }): RateLimitSnapshot | undefined {
+function buildSnapshot(window?: {
+  remaining?: number
+  limit?: number
+  resetAt?: number
+}): RateLimitSnapshot | undefined {
   if (!window) return undefined
   return {
     remaining: window.remaining,
@@ -390,12 +509,17 @@ function buildSnapshot(window?: { remaining?: number; limit?: number; resetAt?: 
   }
 }
 
-function buildHistoryEntry(rateLimits?: { fiveHour?: any; weekly?: any }): RateLimitHistoryEntry | null {
+function buildHistoryEntry(rateLimits?: {
+  fiveHour?: any
+  weekly?: any
+}): RateLimitHistoryEntry | null {
   if (!hasMeaningfulRateLimits(rateLimits)) return null
-  const updatedAtValues = [rateLimits?.fiveHour?.updatedAt, rateLimits?.weekly?.updatedAt].filter(
-    (value): value is number => typeof value === 'number'
-  )
-  const at = updatedAtValues.length > 0 ? Math.max(...updatedAtValues) : Date.now()
+  const updatedAtValues = [
+    rateLimits?.fiveHour?.updatedAt,
+    rateLimits?.weekly?.updatedAt
+  ].filter((value): value is number => typeof value === 'number')
+  const at =
+    updatedAtValues.length > 0 ? Math.max(...updatedAtValues) : Date.now()
   return {
     at,
     fiveHour: buildSnapshot(rateLimits?.fiveHour),
@@ -471,18 +595,18 @@ export function loadStore(): AccountStore {
           return emptyStore()
         }
       }
-      
+
       const migrated = migrateStore(parsed)
       if (migrated) {
         saveLastKnownGood(migrated)
         storeCache = migrated
         return migrated
       }
-      
+
       storeLocked = true
       lastStoreError = 'Store validation failed.'
       console.error('[enhancer] Store validation failed')
-      
+
       const lkg = loadLastKnownGood()
       if (lkg) {
         console.warn('[enhancer] Restored from last-known-good snapshot')
@@ -494,7 +618,7 @@ export function loadStore(): AccountStore {
       storeLocked = true
       lastStoreError = 'Failed to parse store. Store locked until fixed.'
       console.error('[enhancer] Failed to parse store:', err)
-      
+
       const lkg = loadLastKnownGood()
       if (lkg) {
         console.warn('[enhancer] Restored from last-known-good snapshot')
@@ -529,7 +653,9 @@ export function flushStoreToDisk(): void {
 
   ensureDir()
   if (storeLocked) {
-    console.error('[enhancer] Store locked; refusing to overwrite encrypted file.')
+    console.error(
+      '[enhancer] Store locked; refusing to overwrite encrypted file.'
+    )
     return
   }
 
@@ -634,8 +760,10 @@ export function getStoreDiagnostics(): {
   }
 }
 
-
-export function addAccount(alias: string, creds: Omit<AccountCredentials, 'alias' | 'usageCount'>): AccountStore {
+export function addAccount(
+  alias: string,
+  creds: Omit<AccountCredentials, 'alias' | 'usageCount'>
+): AccountStore {
   const store = loadStore()
   const entry = buildHistoryEntry(creds.rateLimits)
   store.accounts[alias] = {
@@ -662,7 +790,10 @@ export function removeAccount(alias: string): AccountStore {
   return store
 }
 
-export function updateAccount(alias: string, updates: Partial<AccountCredentials>): AccountStore {
+export function updateAccount(
+  alias: string,
+  updates: Partial<AccountCredentials>
+): AccountStore {
   const store = loadStore()
   if (store.accounts[alias]) {
     const current = store.accounts[alias]
@@ -687,7 +818,11 @@ export function setActiveAlias(alias: string | null): AccountStore {
   if (alias === null) {
     store.activeAlias = null
   } else if (store.accounts[alias]) {
-    if (previousAlias && previousAlias !== alias && store.accounts[previousAlias]) {
+    if (
+      previousAlias &&
+      previousAlias !== alias &&
+      store.accounts[previousAlias]
+    ) {
       store.accounts[previousAlias] = {
         ...store.accounts[previousAlias],
         lastActiveUntil: now
@@ -727,7 +862,11 @@ export function getStorePath(): string {
   return getStoreFile()
 }
 
-export function getStoreStatus(): { locked: boolean; encrypted: boolean; error: string | null } {
+export function getStoreStatus(): {
+  locked: boolean
+  encrypted: boolean
+  error: string | null
+} {
   const diag = getStoreDiagnostics()
   return { locked: diag.locked, encrypted: diag.encrypted, error: diag.error }
 }

@@ -72,7 +72,13 @@ export interface RateLimitHistoryEntry {
   weekly?: RateLimitSnapshot
 }
 
-export type LimitStatus = 'idle' | 'queued' | 'running' | 'success' | 'error' | 'stopped'
+export type LimitStatus =
+  | 'idle'
+  | 'queued'
+  | 'running'
+  | 'success'
+  | 'error'
+  | 'stopped'
 
 // Phase C: Freshness/confidence state for limits data
 export type LimitsConfidence = 'fresh' | 'stale' | 'error' | 'unknown'
@@ -86,7 +92,7 @@ export function calculateLimitsConfidence(
   const now = Date.now()
   const FRESH_THRESHOLD_MS = 5 * 60 * 1000 // 5 minutes
   const STALE_THRESHOLD_MS = 60 * 60 * 1000 // 60 minutes
-  
+
   // If we have an error more recent than last success, show error
   if (lastErrorAt && (!lastProbeAt || lastErrorAt > lastProbeAt)) {
     // If we have some successful data, show stale with error
@@ -94,14 +100,14 @@ export function calculateLimitsConfidence(
       return 'error'
     }
   }
-  
+
   // No successful probe ever
   if (!lastProbeAt) {
     return 'unknown'
   }
-  
+
   const ageMs = now - lastProbeAt
-  
+
   if (ageMs < FRESH_THRESHOLD_MS) {
     return 'fresh'
   } else if (ageMs < STALE_THRESHOLD_MS) {
@@ -124,9 +130,14 @@ export interface AccountStore {
   forcedUntil?: number | null
   previousRotationStrategy?: string | null
   forcedBy?: string | null
-  rotationStrategy?: 'round-robin' | 'least-used' | 'random' | 'weighted-round-robin' | 'usage-priority'
+  rotationStrategy?:
+    | 'round-robin'
+    | 'least-used'
+    | 'random'
+    | 'weighted-round-robin'
+    | 'usage-priority'
   // Phase F: Settings
-  settings?: RotationSettings
+  settings?: Partial<RotationSettings>
 }
 
 // OpenAI model info
@@ -138,7 +149,20 @@ export interface OpenAIModel {
 }
 
 // Plugin config
-export type RotationStrategy = 'round-robin' | 'least-used' | 'random' | 'weighted-round-robin' | 'usage-priority'
+export type RotationStrategy =
+  | 'round-robin'
+  | 'least-used'
+  | 'random'
+  | 'weighted-round-robin'
+  | 'usage-priority'
+
+const VALID_ROTATION_STRATEGIES = new Set<RotationStrategy>([
+  'round-robin',
+  'least-used',
+  'random',
+  'weighted-round-robin',
+  'usage-priority'
+])
 
 export const AUTO_SWITCH_THRESHOLD_DEFAULT = 20
 
@@ -188,18 +212,26 @@ export const DEFAULT_CONFIG: PluginConfig = {
 // Phase F: Settings model for weighted rotation and thresholds
 export interface RotationSettings {
   // Rotation strategy
-  rotationStrategy: 'round-robin' | 'least-used' | 'random' | 'weighted-round-robin' | 'usage-priority'
-  
+  rotationStrategy:
+    | 'round-robin'
+    | 'least-used'
+    | 'random'
+    | 'weighted-round-robin'
+    | 'usage-priority'
+
   // Rate limit thresholds (0-100)
   criticalThreshold: number // Account skipped below this (default: 10)
-  lowThreshold: number      // Warning threshold (default: 30)
-  
+  lowThreshold: number // Warning threshold (default: 30)
+
   // Account weights for weighted rotation (0-1, sum should be 1)
   accountWeights: Record<string, number>
-  
+
   // Phase G: Feature flags
   featureFlags?: FeatureFlags
-  
+
+  // Native notification toggles
+  notifications?: NotificationSettings
+
   // Last updated
   updatedAt?: number
   updatedBy?: string
@@ -211,13 +243,32 @@ export interface FeatureFlags {
   antigravityEnabled: boolean
 }
 
+export interface NotificationSettings {
+  permissionRequest: boolean
+  taskComplete: boolean
+  error: boolean
+  question: boolean
+}
+
 // Phase G: Default feature flags
 export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   antigravityEnabled: false
 }
 
+export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
+  permissionRequest: true,
+  taskComplete: true,
+  error: true,
+  question: true
+}
+
 // Phase F: Weighted rotation presets
-export type WeightPreset = 'balanced' | 'conservative' | 'aggressive' | 'usage-first' | 'custom'
+export type WeightPreset =
+  | 'balanced'
+  | 'conservative'
+  | 'aggressive'
+  | 'usage-first'
+  | 'custom'
 
 export interface WeightedPresetConfig {
   name: WeightPreset
@@ -235,7 +286,89 @@ export const DEFAULT_ROTATION_SETTINGS: RotationSettings = {
   criticalThreshold: 10,
   lowThreshold: 30,
   accountWeights: {},
-  featureFlags: { ...DEFAULT_FEATURE_FLAGS }
+  featureFlags: { ...DEFAULT_FEATURE_FLAGS },
+  notifications: { ...DEFAULT_NOTIFICATION_SETTINGS }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+export function sanitizeRotationSettings(
+  input: unknown
+): Partial<RotationSettings> | undefined {
+  if (!isRecord(input)) return undefined
+
+  const settings: Partial<RotationSettings> = {}
+
+  if (
+    typeof input.rotationStrategy === 'string' &&
+    VALID_ROTATION_STRATEGIES.has(input.rotationStrategy as RotationStrategy)
+  ) {
+    settings.rotationStrategy = input.rotationStrategy as RotationStrategy
+  }
+
+  if (
+    typeof input.criticalThreshold === 'number' &&
+    Number.isFinite(input.criticalThreshold)
+  ) {
+    settings.criticalThreshold = input.criticalThreshold
+  }
+
+  if (
+    typeof input.lowThreshold === 'number' &&
+    Number.isFinite(input.lowThreshold)
+  ) {
+    settings.lowThreshold = input.lowThreshold
+  }
+
+  if (isRecord(input.accountWeights)) {
+    const accountWeights = Object.fromEntries(
+      Object.entries(input.accountWeights).filter(
+        ([, value]) => typeof value === 'number' && Number.isFinite(value)
+      )
+    ) as Record<string, number>
+    settings.accountWeights = accountWeights
+  }
+
+  if (isRecord(input.featureFlags)) {
+    const featureFlags: FeatureFlags = {
+      ...DEFAULT_FEATURE_FLAGS,
+      ...(typeof input.featureFlags.antigravityEnabled === 'boolean'
+        ? { antigravityEnabled: input.featureFlags.antigravityEnabled }
+        : {})
+    }
+    settings.featureFlags = featureFlags
+  }
+
+  if (isRecord(input.notifications)) {
+    const notifications: NotificationSettings = {
+      ...DEFAULT_NOTIFICATION_SETTINGS,
+      ...(typeof input.notifications.permissionRequest === 'boolean'
+        ? { permissionRequest: input.notifications.permissionRequest }
+        : {}),
+      ...(typeof input.notifications.taskComplete === 'boolean'
+        ? { taskComplete: input.notifications.taskComplete }
+        : {}),
+      ...(typeof input.notifications.error === 'boolean'
+        ? { error: input.notifications.error }
+        : {}),
+      ...(typeof input.notifications.question === 'boolean'
+        ? { question: input.notifications.question }
+        : {})
+    }
+    settings.notifications = notifications
+  }
+
+  if (typeof input.updatedAt === 'number' && Number.isFinite(input.updatedAt)) {
+    settings.updatedAt = input.updatedAt
+  }
+
+  if (typeof input.updatedBy === 'string') {
+    settings.updatedBy = input.updatedBy
+  }
+
+  return settings
 }
 
 // Phase F: Preset configurations
@@ -252,7 +385,7 @@ export const WEIGHTED_PRESETS: Record<WeightPreset, WeightedPresetConfig> = {
     defaultWeights: {}, // Calculated based on limit health
     thresholds: { critical: 20, low: 40 }
   },
-aggressive: {
+  aggressive: {
     name: 'aggressive',
     description: 'Maximize throughput, accept higher risk',
     defaultWeights: {},
@@ -279,12 +412,26 @@ export interface SettingsValidationError {
   constraint: string
 }
 
-export function validateSettings(settings: Partial<RotationSettings>): SettingsValidationError[] {
+export function validateSettings(
+  settings: Partial<RotationSettings>
+): SettingsValidationError[] {
   const errors: SettingsValidationError[] = []
-  
+
   // Validate thresholds are in 0-100 range
   if (settings.criticalThreshold !== undefined) {
-    if (settings.criticalThreshold < 0 || settings.criticalThreshold > 100) {
+    if (
+      typeof settings.criticalThreshold !== 'number' ||
+      Number.isNaN(settings.criticalThreshold)
+    ) {
+      errors.push({
+        field: 'criticalThreshold',
+        message: 'Critical threshold must be a number',
+        constraint: 'typeof criticalThreshold === number'
+      })
+    } else if (
+      settings.criticalThreshold < 0 ||
+      settings.criticalThreshold > 100
+    ) {
       errors.push({
         field: 'criticalThreshold',
         message: 'Critical threshold must be between 0 and 100',
@@ -292,9 +439,18 @@ export function validateSettings(settings: Partial<RotationSettings>): SettingsV
       })
     }
   }
-  
+
   if (settings.lowThreshold !== undefined) {
-    if (settings.lowThreshold < 0 || settings.lowThreshold > 100) {
+    if (
+      typeof settings.lowThreshold !== 'number' ||
+      Number.isNaN(settings.lowThreshold)
+    ) {
+      errors.push({
+        field: 'lowThreshold',
+        message: 'Low threshold must be a number',
+        constraint: 'typeof lowThreshold === number'
+      })
+    } else if (settings.lowThreshold < 0 || settings.lowThreshold > 100) {
       errors.push({
         field: 'lowThreshold',
         message: 'Low threshold must be between 0 and 100',
@@ -302,9 +458,12 @@ export function validateSettings(settings: Partial<RotationSettings>): SettingsV
       })
     }
   }
-  
+
   // Validate critical < low
-  if (settings.criticalThreshold !== undefined && settings.lowThreshold !== undefined) {
+  if (
+    typeof settings.criticalThreshold === 'number' &&
+    typeof settings.lowThreshold === 'number'
+  ) {
     if (settings.criticalThreshold >= settings.lowThreshold) {
       errors.push({
         field: 'thresholds',
@@ -313,11 +472,16 @@ export function validateSettings(settings: Partial<RotationSettings>): SettingsV
       })
     }
   }
-  
+
   // Validate weights are in (0, 1] range
   if (settings.accountWeights) {
     for (const [alias, weight] of Object.entries(settings.accountWeights)) {
-      if (weight <= 0 || weight > 1) {
+      if (
+        typeof weight !== 'number' ||
+        Number.isNaN(weight) ||
+        weight <= 0 ||
+        weight > 1
+      ) {
         errors.push({
           field: `accountWeights.${alias}`,
           message: `Weight for ${alias} must be between 0 and 1`,
@@ -325,9 +489,12 @@ export function validateSettings(settings: Partial<RotationSettings>): SettingsV
         })
       }
     }
-    
+
     // Validate weights sum to approximately 1
-    const totalWeight = Object.values(settings.accountWeights).reduce((sum, w) => sum + w, 0)
+    const totalWeight = Object.values(settings.accountWeights).reduce(
+      (sum, w) => sum + w,
+      0
+    )
     if (totalWeight > 0 && Math.abs(totalWeight - 1) > 0.01) {
       errors.push({
         field: 'accountWeights',
@@ -336,6 +503,21 @@ export function validateSettings(settings: Partial<RotationSettings>): SettingsV
       })
     }
   }
-  
+
+  if (settings.notifications) {
+    const entries = Object.entries(settings.notifications) as Array<
+      [keyof NotificationSettings, unknown]
+    >
+    for (const [key, value] of entries) {
+      if (typeof value !== 'boolean') {
+        errors.push({
+          field: `notifications.${key}`,
+          message: `${key} notification toggle must be true or false`,
+          constraint: 'typeof notifications.<key> === boolean'
+        })
+      }
+    }
+  }
+
   return errors
 }
