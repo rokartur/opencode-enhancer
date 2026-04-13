@@ -18,6 +18,7 @@ import {
   getMinRemaining,
   selectBestAvailableAccount,
 } from "./rotation.js";
+import { compareAccountsByUsagePriority, getUsagePrioritySnapshot } from "./account-ranking.js";
 import { getDefaultModels } from "./models.js";
 import { getForceState, isForceActive } from "./force-mode.js";
 import { getRuntimeSettings, isNotificationEnabled } from "./settings.js";
@@ -992,11 +993,12 @@ const MultiAuthPlugin: Plugin = async ({
                     const betterStore = loadStore();
                     const betterAccount = betterStore.accounts[betterAlias];
                     if (betterAccount) {
-                      const betterRemaining = getMinRemaining(betterAccount.rateLimits);
-                      if (betterRemaining > currentRemaining) {
+                      const currentUsage = getUsagePrioritySnapshot(account.rateLimits);
+                      const betterUsage = getUsagePrioritySnapshot(betterAccount.rateLimits);
+                      if (compareAccountsByUsagePriority(betterAccount, account) < 0) {
                         if (isDebugEnabled()) {
                           console.log(
-                            `[enhancer] Auto-switching from ${account.alias} (${currentRemaining}% remaining) to ${betterAlias} (${betterRemaining}% remaining)`,
+                            `[enhancer] Auto-switching from ${account.alias} (5h=${currentUsage.fiveHourRemaining ?? "unknown"}%, weekly=${currentUsage.weeklyRemaining ?? "unknown"}%) to ${betterAlias} (5h=${betterUsage.fiveHourRemaining ?? "unknown"}%, weekly=${betterUsage.weeklyRemaining ?? "unknown"}%)`,
                           );
                         }
                         updateAccount(betterAlias, {
