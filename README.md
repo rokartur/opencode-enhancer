@@ -80,8 +80,7 @@ This section documents all user-facing configuration surfaces:
 
 1. OpenCode `config.json` (runtime plugin config)
 2. persisted enhancer store (`settings.json`)
-3. CLI config commands
-4. environment variables
+3. environment variables
 
 ### 1) OpenCode `config.json`
 
@@ -148,16 +147,7 @@ Enhancer stores runtime settings under top-level `settings`:
 }
 ```
 
-### 3) CLI config commands
-
-```bash
-opencode-enhancer config
-opencode-enhancer config auto-switch on
-opencode-enhancer config auto-switch off
-opencode-enhancer config reset
-```
-
-### 4) Environment variables (complete)
+### 3) Environment variables (complete)
 
 Primary prefix is `OPENCODE_ENHANCER_*`.
 

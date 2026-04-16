@@ -6,8 +6,6 @@ import { loginAccount } from "./auth.js";
 import { removeAccount, listAccounts, getStorePath, loadStore } from "./store.js";
 import { runPluginsUpdateCommand } from "./plugin-updates.js";
 import { runUsageCommand } from "./usage-command.js";
-import { getSettingsWithInfo, updateSettings, resetSettings } from "./settings.js";
-import { DEFAULT_FEATURE_FLAGS } from "./types.js";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -232,55 +230,6 @@ async function main(): Promise<void> {
       break;
     }
 
-    case "config": {
-      const subCommand = args[1];
-      const settingValue = args[2];
-
-      if (!subCommand || subCommand === "show") {
-        const { settings, source, preset, canReset } = getSettingsWithInfo();
-        console.log("\n[enhancer] Configuration\n");
-        console.log(`  Source:              ${source}`);
-        console.log(`  Rotation strategy:   ${settings.rotationStrategy}`);
-        console.log(`  Critical threshold:  ${settings.criticalThreshold}%`);
-        console.log(`  Low threshold:       ${settings.lowThreshold}%`);
-        console.log(
-          `  Auto-switch:         ${(settings.featureFlags?.autoSwitch ?? DEFAULT_FEATURE_FLAGS.autoSwitch) ? "on" : "off"}`,
-        );
-        console.log(
-          `  Antigravity:         ${(settings.featureFlags?.antigravityEnabled ?? DEFAULT_FEATURE_FLAGS.antigravityEnabled) ? "on" : "off"}`,
-        );
-        if (preset) console.log(`  Preset:              ${preset}`);
-        console.log(`  Reset available:     ${canReset}`);
-        console.log();
-      } else if (subCommand === "auto-switch") {
-        const val = settingValue;
-        if (val !== "on" && val !== "off") {
-          console.error("Usage: opencode-enhancer config auto-switch <on|off>");
-          process.exit(1);
-        }
-        const result = updateSettings(
-          { featureFlags: { ...DEFAULT_FEATURE_FLAGS, autoSwitch: val === "on" } },
-          "cli",
-        );
-        if (result.success) {
-          console.log(`Auto-switch ${val === "on" ? "enabled" : "disabled"}.`);
-        } else {
-          console.error(
-            "Failed to update settings:",
-            result.errors?.map((e) => e.message).join(", "),
-          );
-          process.exit(1);
-        }
-      } else if (subCommand === "reset") {
-        resetSettings("cli");
-        console.log("Settings reset to defaults.");
-      } else {
-        console.error("Usage: opencode-enhancer config [show|auto-switch <on|off>|reset]");
-        process.exit(1);
-      }
-      break;
-    }
-
     case "help":
     case "--help":
     case "-h":
@@ -293,16 +242,10 @@ Commands:
   remove           Remove an account (opens selector)
   list             List all configured accounts
   status           Show detailed account status
-  config           Show or change plugin configuration
   usage            Check usage/quota across all connected providers
   plugins update   Update configured plugins and self-update from GitHub tags
   path             Show config file location
   help             Show this help message
-
-Config options:
-  config                       Show current configuration
-  config auto-switch <on|off>  Enable/disable automatic account switching
-  config reset                 Reset all settings to defaults
 
 Usage options:
   --provider <id>  Check a single provider (claude, codex, gemini, copilot,
@@ -319,8 +262,6 @@ Examples:
   opencode-enhancer add work
   opencode-enhancer add backup
   opencode-enhancer status
-  opencode-enhancer config
-  opencode-enhancer config auto-switch off
   opencode-enhancer usage
   opencode-enhancer usage --provider claude
   opencode-enhancer usage --json
