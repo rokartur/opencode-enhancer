@@ -116,11 +116,11 @@ Enhancer stores runtime settings under top-level `settings`:
 {
   "settings": {
     // rotationStrategy:
-    // - round-robin: cyklicznie przechodzi po zdrowych kontach (A -> B -> C -> A...)
-    // - least-used: wybiera konto z najmniejszym usageCount (potem najdłużej nieużywane)
-    // - random: losuje konto z górnej połowy rankingu zdrowia
-    // - weighted-round-robin: wybór ważony wg accountWeights; brak wag => fallback do round-robin
-    // - usage-priority: wybiera konto z największym remaining (najpierw weekly, potem 5h)
+    // - round-robin: cycles through healthy accounts (A -> B -> C -> A...)
+    // - least-used: selects the account with the lowest usageCount (then the longest-unused)
+    // - random: picks an account from the top half of the health ranking
+    // - weighted-round-robin: weighted selection by accountWeights; no weights => fallback to round-robin
+    // - usage-priority: selects the account with the largest remaining quota (weekly first, then 5h)
     "rotationStrategy": "usage-priority",
 
     // number 0..100 (must be < lowThreshold)

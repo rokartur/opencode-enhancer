@@ -158,7 +158,7 @@ const VALID_ROTATION_STRATEGIES = new Set<RotationStrategy>([
   "usage-priority",
 ]);
 
-export const AUTO_SWITCH_THRESHOLD_DEFAULT = 95;
+export const AUTO_SWITCH_THRESHOLD_DEFAULT = 90;
 
 export interface PluginConfig {
   rotationStrategy: RotationStrategy;
