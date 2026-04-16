@@ -8,9 +8,11 @@ import type {
   UsageWindow,
 } from "./providers/types.js";
 import { decodeJwtPayload } from "./jwt.js";
-import { loadStore } from "./store.js";
+import { loadStore, setActiveAlias, updateAccount } from "./store.js";
 import type { AccountCredentials } from "./types.js";
 import { readUsageCache, writeUsageCache } from "./usage-cache.js";
+import { getAccountIdFromClaims, getEmailFromClaims, getNameFromClaims, syncCodexAuthFile } from "./codex-auth.js";
+import { getOAuthCredential } from "./providers/auth.js";
 
 // ── ANSI helpers ──────────────────────────────────────────────
 
@@ -766,6 +768,39 @@ export interface UsageCommandOptions {
   noCache?: boolean;
 }
 
+function syncActiveAliasFromOpenCodeAuth(): void {
+  const credential = getOAuthCredential("openai");
+  if (!credential?.access) return;
+
+  const claims = decodeJwtPayload(credential.access);
+  const accountId = credential.accountId || getAccountIdFromClaims(claims);
+  const email = getEmailFromClaims(claims);
+  const name = getNameFromClaims(claims);
+  const store = loadStore();
+
+  const match = Object.values(store.accounts).find((account) => {
+    if (account.accessToken === credential.access) return true;
+    if (credential.refresh && account.refreshToken === credential.refresh) return true;
+    if (accountId && account.accountId === accountId) return true;
+    if (email && account.email === email) return true;
+    return false;
+  });
+
+  if (!match) return;
+
+  updateAccount(match.alias, {
+    accessToken: credential.access,
+    refreshToken: credential.refresh || match.refreshToken,
+    expiresAt: credential.expires || match.expiresAt,
+    accountId: accountId || match.accountId,
+    email: email || match.email,
+    name: name || match.name,
+    lastSeenAt: Date.now(),
+    source: "opencode",
+  });
+  setActiveAlias(match.alias);
+}
+
 function isFullUsageCache(results: ProviderResult[]): boolean {
   const expectedProviderIds = new Set(allProviders.map((provider) => provider.id));
   if (results.length !== expectedProviderIds.size) return false;
@@ -780,6 +815,9 @@ function isFullUsageCache(results: ProviderResult[]): boolean {
 }
 
 export async function runUsageCommand(opts: UsageCommandOptions): Promise<void> {
+  syncCodexAuthFile();
+  syncActiveAliasFromOpenCodeAuth();
+
   const providerIds = opts.provider ? [opts.provider] : undefined;
 
   // Validate provider name
