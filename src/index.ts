@@ -21,7 +21,7 @@ import {
 import { compareAccountsByUsagePriority, getUsagePrioritySnapshot } from "./account-ranking.js";
 import { getDefaultModels } from "./models.js";
 import { getForceState, isForceActive } from "./force-mode.js";
-import { getRuntimeSettings, isNotificationEnabled } from "./settings.js";
+import { getRuntimeSettings, isFeatureEnabled, isNotificationEnabled } from "./settings.js";
 import { listAccounts, updateAccount, loadStore } from "./store.js";
 import {
   DEFAULT_CONFIG,
@@ -978,7 +978,7 @@ const MultiAuthPlugin: Plugin = async ({
 
             // Auto-switch: if current account has low remaining usage and
             // there is a better account available, switch to it.
-            if (pluginConfig.autoSwitchOnLowUsage && !forcePinned) {
+            if (isFeatureEnabled("autoSwitch") && !forcePinned) {
               const currentRemaining = getMinRemaining(account.rateLimits);
               const threshold = pluginConfig.autoSwitchThreshold;
               if (
