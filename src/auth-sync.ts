@@ -1,5 +1,5 @@
 import type { Auth } from '@opencode-ai/sdk'
-import { addAccount, loadStore, updateAccount } from './store.js'
+import { addAccount, loadStore, setActiveAlias, updateAccount } from './store.js'
 import { decodeJwtPayload } from './jwt.js'
 import { getAccountIdFromClaims, getEmailFromClaims, getNameFromClaims } from './codex-auth.js'
 
@@ -82,6 +82,7 @@ export async function syncAuthFromOpenCode(getAuth: () => Promise<Auth>): Promis
       name: derivedName,
       accountId: derivedAccountId
     })
+    setActiveAlias(existingAlias)
     return
   }
 
@@ -99,6 +100,7 @@ export async function syncAuthFromOpenCode(getAuth: () => Promise<Auth>): Promis
         email,
         name
       })
+      setActiveAlias(existingByEmail)
       return
     }
   }
@@ -113,4 +115,5 @@ export async function syncAuthFromOpenCode(getAuth: () => Promise<Auth>): Promis
     accountId: derivedAccountId,
     source: 'opencode'
   })
+  setActiveAlias(alias)
 }
