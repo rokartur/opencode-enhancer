@@ -21,7 +21,7 @@ import { compareAccountsByUsagePriority, getUsagePrioritySnapshot } from "./acco
 import { getDefaultModels } from "./models.js";
 import { getForceState, isForceActive } from "./force-mode.js";
 import { getRuntimeSettings, isFeatureEnabled, isNotificationEnabled } from "./settings.js";
-import { listAccounts, updateAccount, loadStore } from "./store.js";
+import { listAccounts, updateAccount, loadStore, setActiveAlias } from "./store.js";
 import {
   DEFAULT_CONFIG,
   type AccountCredentials,
@@ -989,21 +989,28 @@ const MultiAuthPlugin: Plugin = async ({
 
             let { account, token } = rotation;
 
-            // Auto-switch: if current account reaches configured 5h used threshold
-            // and there is a better account available, switch to it.
+            // Auto-switch: if current account reaches configured used threshold
+            // (weekly checked first, then 5h) and there is a better account available,
+            // switch to it.
             if (isFeatureEnabled("autoSwitch") && !forcePinned) {
               const currentUsageSnapshot = getUsagePrioritySnapshot(account.rateLimits);
-              const autoSwitchFiveHourUsedTrigger = normalizePercent(pluginConfig.autoSwitchThreshold);
+              const autoSwitchUsedTrigger = normalizePercent(pluginConfig.autoSwitchThreshold);
+              const currentWeeklyUsed =
+                typeof currentUsageSnapshot.weeklyRemaining === "number"
+                  ? Math.max(0, Math.min(100, 100 - currentUsageSnapshot.weeklyRemaining))
+                  : null;
               const currentFiveHourUsed =
                 typeof currentUsageSnapshot.fiveHourRemaining === "number"
                   ? Math.max(0, Math.min(100, 100 - currentUsageSnapshot.fiveHourRemaining))
                   : null;
+              const shouldAutoSwitchByUsage =
+                typeof autoSwitchUsedTrigger === "number" &&
+                ((typeof currentWeeklyUsed === "number" &&
+                  currentWeeklyUsed >= autoSwitchUsedTrigger) ||
+                  (typeof currentFiveHourUsed === "number" &&
+                    currentFiveHourUsed >= autoSwitchUsedTrigger));
 
-              if (
-                typeof autoSwitchFiveHourUsedTrigger === "number" &&
-                typeof currentFiveHourUsed === "number" &&
-                currentFiveHourUsed >= autoSwitchFiveHourUsedTrigger
-              ) {
+              if (shouldAutoSwitchByUsage) {
                 const betterAlias = selectBestAvailableAccount(account.alias);
                 if (betterAlias) {
                   const betterToken = await ensureValidToken(betterAlias);
@@ -1015,7 +1022,7 @@ const MultiAuthPlugin: Plugin = async ({
                       if (compareAccountsByUsagePriority(betterAccount, account) < 0) {
                         if (isDebugEnabled()) {
                           console.log(
-                            `[enhancer] Auto-switching from ${account.alias} (5h used=${currentFiveHourUsed.toFixed(1)}%, 5h remaining=${currentUsageSnapshot.fiveHourRemaining ?? "unknown"}%, weekly remaining=${currentUsageSnapshot.weeklyRemaining ?? "unknown"}%) to ${betterAlias} (5h remaining=${betterUsageSnapshot.fiveHourRemaining ?? "unknown"}%, weekly remaining=${betterUsageSnapshot.weeklyRemaining ?? "unknown"}%)`,
+                            `[enhancer] Auto-switching from ${account.alias} (weekly used=${typeof currentWeeklyUsed === "number" ? currentWeeklyUsed.toFixed(1) : "unknown"}%, 5h used=${typeof currentFiveHourUsed === "number" ? currentFiveHourUsed.toFixed(1) : "unknown"}%, weekly remaining=${currentUsageSnapshot.weeklyRemaining ?? "unknown"}%, 5h remaining=${currentUsageSnapshot.fiveHourRemaining ?? "unknown"}%) to ${betterAlias} (weekly remaining=${betterUsageSnapshot.weeklyRemaining ?? "unknown"}%, 5h remaining=${betterUsageSnapshot.fiveHourRemaining ?? "unknown"}%)`,
                           );
                         }
                         updateAccount(betterAlias, {
@@ -1373,6 +1380,7 @@ const MultiAuthPlugin: Plugin = async ({
                     callback: async () => {
                       try {
                         const account = await loginAccount(undefined, flow);
+                        setActiveAlias(account.alias);
                         return {
                           type: "success" as const,
                           provider: PROVIDER_ID,
@@ -1401,6 +1409,7 @@ const MultiAuthPlugin: Plugin = async ({
                     callback: async () => {
                       try {
                         const acc = await loginAccount(undefined, flow);
+                        setActiveAlias(acc.alias);
                         return {
                           type: "success" as const,
                           provider: PROVIDER_ID,
@@ -1422,13 +1431,16 @@ const MultiAuthPlugin: Plugin = async ({
                     ". You can close this tab.</p></body></html>",
                   method: "auto" as const,
                   instructions: `Using stored account: ${account.email || account.alias}`,
-                  callback: async () => ({
-                    type: "success" as const,
-                    provider: PROVIDER_ID,
-                    refresh: account.refreshToken,
-                    access: account.accessToken,
-                    expires: account.expiresAt,
-                  }),
+                  callback: async () => {
+                    setActiveAlias(account.alias);
+                    return {
+                      type: "success" as const,
+                      provider: PROVIDER_ID,
+                      refresh: account.refreshToken,
+                      access: account.accessToken,
+                      expires: account.expiresAt,
+                    };
+                  },
                 };
               },
             },
@@ -1444,6 +1456,7 @@ const MultiAuthPlugin: Plugin = async ({
                   callback: async () => {
                     try {
                       const account = await loginAccount(undefined, flow);
+                      setActiveAlias(account.alias);
                       return {
                         type: "success" as const,
                         provider: PROVIDER_ID,
@@ -1498,6 +1511,7 @@ const MultiAuthPlugin: Plugin = async ({
                 callback: async () => {
                   try {
                     const account = await loginAccount(undefined, flow);
+                    setActiveAlias(account.alias);
                     return {
                       type: "success" as const,
                       provider: PROVIDER_ID,

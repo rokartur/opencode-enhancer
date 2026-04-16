@@ -285,13 +285,14 @@ export function resolveAliasForCurrentAuth(store?: ReturnType<typeof loadStore>)
   )
 }
 
-export function syncCodexAuthFile(): {
+export function syncCodexAuthFile(options?: { setActiveAlias?: boolean }): {
   alias: string | null
   added: boolean
   updated: boolean
   authEmail?: string
   authAccountId?: string
 } {
+  const shouldSetActiveAlias = options?.setActiveAlias !== false
   const auth = loadCodexAuthFile()
   const normalized = normalizeTokens(auth)
   if (!normalized?.accessToken || !normalized.refreshToken) {
@@ -354,13 +355,17 @@ export function syncCodexAuthFile(): {
 
   if (alias) {
     updateAccount(alias, update)
-    setActiveAlias(alias)
+    if (shouldSetActiveAlias) {
+      setActiveAlias(alias)
+    }
     return { alias, added: false, updated: true, authEmail: email, authAccountId: accountId }
   }
 
   const newAlias = buildAlias(email, accountId, store)
   addAccount(newAlias, update as Omit<AccountCredentials, 'alias' | 'usageCount'>)
-  setActiveAlias(newAlias)
+  if (shouldSetActiveAlias) {
+    setActiveAlias(newAlias)
+  }
   return { alias: newAlias, added: true, updated: true, authEmail: email, authAccountId: accountId }
 }
 

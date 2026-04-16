@@ -168,7 +168,7 @@ export interface PluginConfig {
   workspaceDeactivatedCooldownMs: number; // How long to skip accounts with deactivated workspaces
   modelFilter: RegExp; // Which models to expose
   autoSwitchOnLowUsage: boolean; // Auto-switch to account with highest usage when current account is low
-  autoSwitchThreshold: number; // 5h used % threshold at/above which auto-switch triggers (0-100)
+  autoSwitchThreshold: number; // Used % threshold at/above which auto-switch triggers (weekly first, then 5h) (0-100)
 }
 
 // OpenCode provider model definition

@@ -25,8 +25,10 @@ function compareRemainingDescending(a: number | null, b: number | null): number 
     return 0;
   }
 
-  if (aKnown) return -1;
-  if (bKnown) return 1;
+  // Unknown remaining is usually less preferred than a known value,
+  // except when the known value is already exhausted (<= 0).
+  if (aKnown) return a <= 0 ? 1 : -1;
+  if (bKnown) return b <= 0 ? -1 : 1;
   return 0;
 }
 

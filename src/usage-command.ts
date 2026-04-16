@@ -8,7 +8,7 @@ import type {
   UsageWindow,
 } from "./providers/types.js";
 import { decodeJwtPayload } from "./jwt.js";
-import { loadStore, setActiveAlias, updateAccount } from "./store.js";
+import { loadStore, updateAccount } from "./store.js";
 import type { AccountCredentials } from "./types.js";
 import { readUsageCache, writeUsageCache } from "./usage-cache.js";
 import { getAccountIdFromClaims, getEmailFromClaims, getNameFromClaims, syncCodexAuthFile } from "./codex-auth.js";
@@ -798,7 +798,6 @@ function syncActiveAliasFromOpenCodeAuth(): void {
     lastSeenAt: Date.now(),
     source: "opencode",
   });
-  setActiveAlias(match.alias);
 }
 
 function isFullUsageCache(results: ProviderResult[]): boolean {
@@ -815,7 +814,7 @@ function isFullUsageCache(results: ProviderResult[]): boolean {
 }
 
 export async function runUsageCommand(opts: UsageCommandOptions): Promise<void> {
-  syncCodexAuthFile();
+  syncCodexAuthFile({ setActiveAlias: false });
   syncActiveAliasFromOpenCodeAuth();
 
   const providerIds = opts.provider ? [opts.provider] : undefined;
