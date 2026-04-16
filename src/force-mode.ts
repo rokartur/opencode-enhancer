@@ -83,7 +83,7 @@ export function activateForce(
   const currentStrategy =
     store.settings?.rotationStrategy ||
     store.rotationStrategy ||
-    'round-robin'
+    'usage-priority'
 
   // Store previous rotation strategy if not already forcing
   const previousStrategy = (store.forcedAlias ? store.previousRotationStrategy : currentStrategy) ?? null
@@ -115,7 +115,7 @@ export function clearForce(): { success: boolean; restoredStrategy?: string | nu
   const currentStrategy =
     store.settings?.rotationStrategy ||
     store.rotationStrategy ||
-    'round-robin'
+    'usage-priority'
   const nextStrategy = isRotationStrategy(restoredStrategy)
     ? restoredStrategy
     : currentStrategy

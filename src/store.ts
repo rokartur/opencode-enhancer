@@ -406,7 +406,7 @@ function validateStore(data: any): AccountStore | null {
           ? force.forcedBy
           : null,
     rotationStrategy:
-      data.rotationStrategy ?? data.settings?.rotationStrategy ?? 'round-robin',
+      data.rotationStrategy ?? data.settings?.rotationStrategy ?? 'usage-priority',
     settings: sanitizeRotationSettings(data.settings)
   }
 }
@@ -419,9 +419,9 @@ function migrateV1toV2(data: StoreFileV1): StoreFileV2 {
     forcedUntil: null,
     previousRotationStrategy: null,
     forcedBy: null,
-    rotationStrategy: 'round-robin',
+    rotationStrategy: 'usage-priority',
     settings: {
-      rotationStrategy: 'round-robin'
+      rotationStrategy: 'usage-priority'
     }
   }
 }

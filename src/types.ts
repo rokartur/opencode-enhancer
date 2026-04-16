@@ -193,7 +193,7 @@ export interface ProviderModel {
 }
 
 export const DEFAULT_CONFIG: PluginConfig = {
-  rotationStrategy: "round-robin",
+  rotationStrategy: "usage-priority",
   autoRefreshTokens: true,
   rateLimitCooldownMs: 5 * 60 * 1000,
   modelUnsupportedCooldownMs: 30 * 60 * 1000,
@@ -274,7 +274,7 @@ export interface WeightedPresetConfig {
 
 // Phase F: Default settings
 export const DEFAULT_ROTATION_SETTINGS: RotationSettings = {
-  rotationStrategy: "round-robin",
+  rotationStrategy: "usage-priority",
   criticalThreshold: 10,
   lowThreshold: 30,
   accountWeights: {},

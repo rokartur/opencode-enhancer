@@ -161,9 +161,11 @@ async function main(): Promise<void> {
     case "status": {
       const store = loadStore();
       const accounts = Object.values(store.accounts);
+      const strategy =
+        store.settings?.rotationStrategy || store.rotationStrategy || "usage-priority";
 
       console.log("\n[enhancer] Account Status\n");
-      console.log("Strategy: round-robin");
+      console.log(`Strategy: ${strategy}`);
       console.log(`Accounts: ${accounts.length}`);
       console.log(`Active: ${store.activeAlias || "none"}\n`);
 

@@ -115,8 +115,13 @@ Enhancer stores runtime settings under top-level `settings`:
 ```jsonc
 {
   "settings": {
-    // round-robin | least-used | random | weighted-round-robin | usage-priority
-    "rotationStrategy": "round-robin",
+    // rotationStrategy:
+    // - round-robin: cyklicznie przechodzi po zdrowych kontach (A -> B -> C -> A...)
+    // - least-used: wybiera konto z najmniejszym usageCount (potem najdłużej nieużywane)
+    // - random: losuje konto z górnej połowy rankingu zdrowia
+    // - weighted-round-robin: wybór ważony wg accountWeights; brak wag => fallback do round-robin
+    // - usage-priority: wybiera konto z największym remaining (najpierw weekly, potem 5h)
+    "rotationStrategy": "usage-priority",
 
     // number 0..100 (must be < lowThreshold)
     "criticalThreshold": 10,
