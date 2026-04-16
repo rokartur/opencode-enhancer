@@ -1,6 +1,6 @@
 {
   "name": "opencode-enhancer",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "OpenCode enhancer for Codex accounts, usage tracking, plugin updates, and automation",
   "type": "module",
   "main": "./dist/index.js",
