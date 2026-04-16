@@ -43,14 +43,14 @@ export function compareAccountsByUsagePriority(
   const usageA = getUsagePrioritySnapshot(accountA.rateLimits, now);
   const usageB = getUsagePrioritySnapshot(accountB.rateLimits, now);
 
+  const weeklyDiff = compareRemainingDescending(usageA.weeklyRemaining, usageB.weeklyRemaining);
+  if (weeklyDiff !== 0) return weeklyDiff;
+
   const fiveHourDiff = compareRemainingDescending(
     usageA.fiveHourRemaining,
     usageB.fiveHourRemaining,
   );
   if (fiveHourDiff !== 0) return fiveHourDiff;
-
-  const weeklyDiff = compareRemainingDescending(usageA.weeklyRemaining, usageB.weeklyRemaining);
-  if (weeklyDiff !== 0) return weeklyDiff;
 
   const priorityDiff = (options?.healthPriorityB || 0) - (options?.healthPriorityA || 0);
   if (priorityDiff !== 0) return priorityDiff;

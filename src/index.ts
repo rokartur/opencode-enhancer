@@ -15,7 +15,6 @@ import {
   markModelUnsupported,
   markRateLimited,
   markWorkspaceDeactivated,
-  getMinRemaining,
   selectBestAvailableAccount,
 } from "./rotation.js";
 import { compareAccountsByUsagePriority, getUsagePrioritySnapshot } from "./account-ranking.js";
@@ -44,6 +43,7 @@ import {
 } from "./constants.js";
 
 let pluginConfig: PluginConfig = { ...DEFAULT_CONFIG };
+const AUTO_SWITCH_FIVE_HOUR_USED_TRIGGER = 90;
 
 function readEnv(...keys: string[]): string | undefined {
   for (const key of keys) {
@@ -979,12 +979,15 @@ const MultiAuthPlugin: Plugin = async ({
             // Auto-switch: if current account has low remaining usage and
             // there is a better account available, switch to it.
             if (isFeatureEnabled("autoSwitch") && !forcePinned) {
-              const currentRemaining = getMinRemaining(account.rateLimits);
-              const threshold = pluginConfig.autoSwitchThreshold;
+              const currentUsageSnapshot = getUsagePrioritySnapshot(account.rateLimits);
+              const currentFiveHourUsed =
+                typeof currentUsageSnapshot.fiveHourRemaining === "number"
+                  ? Math.max(0, Math.min(100, 100 - currentUsageSnapshot.fiveHourRemaining))
+                  : null;
+
               if (
-                typeof currentRemaining === "number" &&
-                currentRemaining !== Infinity &&
-                currentRemaining <= threshold
+                typeof currentFiveHourUsed === "number" &&
+                currentFiveHourUsed >= AUTO_SWITCH_FIVE_HOUR_USED_TRIGGER
               ) {
                 const betterAlias = selectBestAvailableAccount(account.alias);
                 if (betterAlias) {
@@ -993,12 +996,11 @@ const MultiAuthPlugin: Plugin = async ({
                     const betterStore = loadStore();
                     const betterAccount = betterStore.accounts[betterAlias];
                     if (betterAccount) {
-                      const currentUsage = getUsagePrioritySnapshot(account.rateLimits);
-                      const betterUsage = getUsagePrioritySnapshot(betterAccount.rateLimits);
+                      const betterUsageSnapshot = getUsagePrioritySnapshot(betterAccount.rateLimits);
                       if (compareAccountsByUsagePriority(betterAccount, account) < 0) {
                         if (isDebugEnabled()) {
                           console.log(
-                            `[enhancer] Auto-switching from ${account.alias} (5h=${currentUsage.fiveHourRemaining ?? "unknown"}%, weekly=${currentUsage.weeklyRemaining ?? "unknown"}%) to ${betterAlias} (5h=${betterUsage.fiveHourRemaining ?? "unknown"}%, weekly=${betterUsage.weeklyRemaining ?? "unknown"}%)`,
+                            `[enhancer] Auto-switching from ${account.alias} (5h used=${currentFiveHourUsed.toFixed(1)}%, 5h remaining=${currentUsageSnapshot.fiveHourRemaining ?? "unknown"}%, weekly remaining=${currentUsageSnapshot.weeklyRemaining ?? "unknown"}%) to ${betterAlias} (5h remaining=${betterUsageSnapshot.fiveHourRemaining ?? "unknown"}%, weekly remaining=${betterUsageSnapshot.weeklyRemaining ?? "unknown"}%)`,
                           );
                         }
                         updateAccount(betterAlias, {

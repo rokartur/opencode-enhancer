@@ -329,7 +329,7 @@ export async function getNextAccount(
       }
       case "usage-priority": {
         // Always pick the account with the most remaining usage,
-        // prioritizing 5h remaining before weekly remaining.
+        // prioritizing weekly remaining before 5h remaining.
         const sorted = [...availableAliases].sort((a, b) => {
           return compareAccountsByUsagePriority(store.accounts[a], store.accounts[b], {
             healthPriorityA: healthMap.get(a)?.priority,
