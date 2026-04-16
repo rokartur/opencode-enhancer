@@ -158,7 +158,7 @@ const VALID_ROTATION_STRATEGIES = new Set<RotationStrategy>([
   "usage-priority",
 ]);
 
-export const AUTO_SWITCH_THRESHOLD_DEFAULT = 20;
+export const AUTO_SWITCH_THRESHOLD_DEFAULT = 95;
 
 export interface PluginConfig {
   rotationStrategy: RotationStrategy;
@@ -168,7 +168,7 @@ export interface PluginConfig {
   workspaceDeactivatedCooldownMs: number; // How long to skip accounts with deactivated workspaces
   modelFilter: RegExp; // Which models to expose
   autoSwitchOnLowUsage: boolean; // Auto-switch to account with highest usage when current account is low
-  autoSwitchThreshold: number; // Remaining % threshold below which auto-switch triggers (0-100)
+  autoSwitchThreshold: number; // 5h used % threshold at/above which auto-switch triggers (0-100)
 }
 
 // OpenCode provider model definition

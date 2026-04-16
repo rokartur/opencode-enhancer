@@ -43,7 +43,11 @@ import {
 } from "./constants.js";
 
 let pluginConfig: PluginConfig = { ...DEFAULT_CONFIG };
-const AUTO_SWITCH_FIVE_HOUR_USED_TRIGGER = 90;
+
+function normalizePercent(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  return Math.max(0, Math.min(100, value));
+}
 
 function readEnv(...keys: string[]): string | undefined {
   for (const key of keys) {
@@ -854,6 +858,16 @@ const MultiAuthPlugin: Plugin = async ({
       );
     },
     config: async (config) => {
+      const openai = (config.provider?.[PROVIDER_ID] as any) || null;
+      const configuredAutoSwitchThreshold = normalizePercent(
+        openai?.enhancer?.autoSwitchThreshold ??
+          openai?.autoSwitchThreshold ??
+          (config as any)?.opencodeEnhancer?.autoSwitchThreshold,
+      );
+      configure({
+        autoSwitchThreshold: configuredAutoSwitchThreshold ?? DEFAULT_CONFIG.autoSwitchThreshold,
+      });
+
       const injectModelsRaw = readEnv(
         "OPENCODE_ENHANCER_INJECT_MODELS",
         "OPENCODE_MULTI_AUTH_INJECT_MODELS",
@@ -866,7 +880,6 @@ const MultiAuthPlugin: Plugin = async ({
         "gpt-5.4"
       ).trim();
       try {
-        const openai = (config.provider?.[PROVIDER_ID] as any) || null;
         if (!openai || typeof openai !== "object") return;
         openai.models ||= {};
         openai.whitelist ||= [];
@@ -976,18 +989,20 @@ const MultiAuthPlugin: Plugin = async ({
 
             let { account, token } = rotation;
 
-            // Auto-switch: if current account has low remaining usage and
-            // there is a better account available, switch to it.
+            // Auto-switch: if current account reaches configured 5h used threshold
+            // and there is a better account available, switch to it.
             if (isFeatureEnabled("autoSwitch") && !forcePinned) {
               const currentUsageSnapshot = getUsagePrioritySnapshot(account.rateLimits);
+              const autoSwitchFiveHourUsedTrigger = normalizePercent(pluginConfig.autoSwitchThreshold);
               const currentFiveHourUsed =
                 typeof currentUsageSnapshot.fiveHourRemaining === "number"
                   ? Math.max(0, Math.min(100, 100 - currentUsageSnapshot.fiveHourRemaining))
                   : null;
 
               if (
+                typeof autoSwitchFiveHourUsedTrigger === "number" &&
                 typeof currentFiveHourUsed === "number" &&
-                currentFiveHourUsed >= AUTO_SWITCH_FIVE_HOUR_USED_TRIGGER
+                currentFiveHourUsed >= autoSwitchFiveHourUsedTrigger
               ) {
                 const betterAlias = selectBestAvailableAccount(account.alias);
                 if (betterAlias) {
