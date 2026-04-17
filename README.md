@@ -86,7 +86,7 @@ This section documents all user-facing configuration surfaces:
 
 Currently supported plugin option:
 
-- `autoSwitchThreshold` (`0..100`, default `95`) — trigger for automatic switching when current account reaches **5h used >= threshold**.
+- `autoSwitchThreshold` (`0..100`, default `90`) — trigger for automatic switching when current account reaches **5h used >= threshold**.
 
 Recognized locations (checked in this order):
 
