@@ -337,6 +337,27 @@ export async function getNextAccount(
             now,
           });
         });
+
+        // Sticky tiebreaker: if the currently active account is among the
+        // candidates and ranks equally to the top candidate, prefer it so
+        // that a manual switch in the TUI is respected.
+        const active = store.activeAlias;
+        if (active && sorted.length > 1 && sorted[0] !== active && sorted.includes(active)) {
+          const topAccount = store.accounts[sorted[0]];
+          const activeAccount = store.accounts[active];
+          const cmp = compareAccountsByUsagePriority(activeAccount, topAccount, {
+            healthPriorityA: healthMap.get(active)?.priority,
+            healthPriorityB: healthMap.get(sorted[0])?.priority,
+            now,
+          });
+          // cmp === 0 means equal rank — promote active to front
+          if (cmp === 0) {
+            const idx = sorted.indexOf(active);
+            sorted.splice(idx, 1);
+            sorted.unshift(active);
+          }
+        }
+
         return { aliases: sorted };
       }
       case "round-robin":
