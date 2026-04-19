@@ -146,7 +146,11 @@ Enhancer stores runtime settings under top-level `settings`:
       "permissionRequest": true,
       "taskComplete": true,
       "error": true,
-      "question": true
+      "question": true,
+
+      // boolean; when true, `auto` backend on macOS also mirrors
+      // notifications through the system backend while the terminal is frontmost
+      "whenTerminalActive": false
     }
   }
 }
@@ -195,6 +199,7 @@ Additionally, `CODEX_SOFT_LOG_PATH` and `CODEX_SOFT_STORE_PASSPHRASE` are still 
 
 - `OPENCODE_ENHANCER_NOTIFY` — global notifications toggle (`0|false` disables).
 - `OPENCODE_ENHANCER_NOTIFY_BACKEND` — `auto|terminal|system`.
+- `OPENCODE_ENHANCER_NOTIFY_WHEN_TERMINAL_ACTIVE` — `1|true` overrides settings and enables system notification mirroring in `auto` mode when the supported terminal app is frontmost.
 - `OPENCODE_ENHANCER_NOTIFY_SOUND` — sound path for macOS system notifications.
 - `OPENCODE_ENHANCER_NOTIFY_MAC_OPEN` — macOS click-to-open support toggle (`0|false` disables).
 - `OPENCODE_ENHANCER_NOTIFY_NTFY_URL` — optional ntfy endpoint.
@@ -220,7 +225,7 @@ OPENCODE_ENHANCER_NOTIFY_BACKEND=auto
 
 Supported values:
 
-- `auto` - prefer terminal-native notifications when running in a supported terminal with access to a real TTY; otherwise fall back to the existing system backend
+- `auto` - prefer terminal-native notifications when running in a supported terminal with access to a real TTY; otherwise fall back to the existing system backend. If `settings.notifications.whenTerminalActive` is `true` (or `OPENCODE_ENHANCER_NOTIFY_WHEN_TERMINAL_ACTIVE=1`), macOS also mirrors alerts through the system backend while the supported terminal app is frontmost.
 - `terminal` - use terminal-native notifications only; do not fall back to the system backend
 - `system` - always use the existing system backend (`osascript` / `terminal-notifier` on macOS)
 
@@ -236,6 +241,7 @@ Notes and limitations:
 - Terminal-native notifications require the plugin process to reach the controlling terminal. The implementation first tries `/dev/tty`, then falls back to a TTY stderr/stdout stream.
 - `tmux`, `screen`, and `zellij` are not supported in this first slice; they may intercept OSC unless passthrough is configured.
 - On macOS/Linux, the terminal app itself must be allowed to show notifications by the OS.
+- On macOS in `auto` mode, frontmost Ghostty/iTerm2/kitty/WezTerm sessions trigger the system notification path only when `settings.notifications.whenTerminalActive` is enabled, or the env override is set to `1`.
 - In WezTerm, `notification_handling` must not be set to `NeverShow`.
 - Terminal-native notifications intentionally use a compact single-line payload. Click-to-open URLs are still only available through the existing system backend.
 

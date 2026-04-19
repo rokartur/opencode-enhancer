@@ -19,6 +19,14 @@ interface QuotaResponse {
   buckets: QuotaBucket[]
 }
 
+function formatGeminiModelLabel(modelId: string): string {
+  const normalized = modelId.trim().toLowerCase()
+  if (normalized === 'gemini-2.5-flash') return 'Flash'
+  if (normalized === 'gemini-2.5-flash-lite') return 'Lite'
+  if (normalized === 'gemini-2.5-pro') return 'Pro'
+  return modelId || 'unknown'
+}
+
 function inferGeminiPlan(modelId: string): string | undefined {
   const normalized = modelId.trim().toLowerCase()
   if (!normalized) return undefined
@@ -129,19 +137,22 @@ export const geminiProvider: UsageProvider = {
       const windows: UsageWindow[] = buckets.map((b) => ({
         utilization: (1 - b.remainingFraction) * 100,
         resetsAt: b.resetTime ? new Date(b.resetTime).getTime() : undefined,
-        label: b.modelId || 'unknown',
+        label: formatGeminiModelLabel(b.modelId),
       }))
 
-      const accounts: ProviderAccountResult[] = windows.map((window) => ({
-        label: window.label,
-        plan: inferGeminiPlan(window.label),
-        status: 'ok',
-        usage: {
-          type: 'quotaBased',
-          utilization: window.utilization,
-          windows: [window],
-        },
-      }))
+      const accounts: ProviderAccountResult[] = buckets.map((bucket, index) => {
+        const window = windows[index]
+        return {
+          label: window.label,
+          plan: inferGeminiPlan(bucket.modelId),
+          status: 'ok',
+          usage: {
+            type: 'quotaBased',
+            utilization: window.utilization,
+            windows: [window],
+          },
+        }
+      })
 
       // Overall utilization: highest used model
       const primaryUtil = Math.max(...windows.map((w) => w.utilization))

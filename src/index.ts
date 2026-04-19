@@ -1,4 +1,5 @@
 import type { Plugin, PluginInput } from "@opencode-ai/plugin";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import { syncAuthFromOpenCode } from "./auth-sync.js";
 import { createAuthorizationFlow, loginAccount, ensureValidToken } from "./auth.js";
@@ -318,6 +319,7 @@ const MultiAuthPlugin: Plugin = async ({
     readEnv("OPENCODE_ENHANCER_NOTIFY_SOUND", "OPENCODE_MULTI_AUTH_NOTIFY_SOUND") ||
     "/System/Library/Sounds/Glass.aiff"
   ).trim();
+  const notifyWhenTerminalActive = isNotificationEnabled("whenTerminalActive", true);
 
   const lastStatusBySession = new Map<string, string>();
   const lastNotifiedAtByKey = new Map<string, number>();
@@ -347,6 +349,16 @@ const MultiAuthPlugin: Plugin = async ({
     supported: boolean;
     terminal?: "ghostty" | "iterm2" | "kitty" | "wezterm";
     reason?: string;
+  };
+
+  const TERMINAL_BUNDLE_IDS: Record<
+    NonNullable<TerminalNotificationSupport["terminal"]>,
+    string[]
+  > = {
+    ghostty: ["com.mitchellh.ghostty"],
+    iterm2: ["com.googlecode.iterm2"],
+    kitty: ["net.kovidgoyal.kitty"],
+    wezterm: ["com.github.wez.wezterm"],
   };
 
   const getTerminalNotificationSupport = (): TerminalNotificationSupport => {
@@ -403,6 +415,44 @@ const MultiAuthPlugin: Plugin = async ({
     }
 
     return false;
+  };
+
+  let cachedFrontmostBundleID: { value: string; expiresAt: number } | null = null;
+
+  const getFrontmostMacBundleID = (): string => {
+    if (process.platform !== "darwin") return "";
+
+    const now = Date.now();
+    if (cachedFrontmostBundleID && cachedFrontmostBundleID.expiresAt > now) {
+      return cachedFrontmostBundleID.value;
+    }
+
+    try {
+      const osascript = "/usr/bin/osascript";
+      const script =
+        'tell application "System Events" to get bundle identifier of first application process whose frontmost is true';
+      const proc = spawnSync(osascript, ["-e", script], { encoding: "utf8" });
+      const value = proc.status === 0 ? proc.stdout.trim() : "";
+      cachedFrontmostBundleID = { value, expiresAt: now + 1000 };
+      return value;
+    } catch {
+      cachedFrontmostBundleID = { value: "", expiresAt: now + 1000 };
+      return "";
+    }
+  };
+
+  const shouldMirrorTerminalNotificationToSystem = (
+    terminalSupport: TerminalNotificationSupport,
+  ): boolean => {
+    if (notifyBackend !== "auto") return false;
+    if (!notifyWhenTerminalActive) return false;
+    if (process.platform !== "darwin") return false;
+    if (!terminalSupport.supported || !terminalSupport.terminal) return false;
+
+    const frontmostBundleID = getFrontmostMacBundleID();
+    if (!frontmostBundleID) return false;
+
+    return TERMINAL_BUNDLE_IDS[terminalSupport.terminal].includes(frontmostBundleID);
   };
 
   const notifyTerminal = (title: string, body: string): boolean => {
@@ -614,6 +664,7 @@ const MultiAuthPlugin: Plugin = async ({
   ): Promise<void> => {
     let localDelivered = false;
     const terminalSupport = getTerminalNotificationSupport();
+    const mirrorTerminalToSystem = shouldMirrorTerminalNotificationToSystem(terminalSupport);
 
     if (notifyBackend === "terminal" || (notifyBackend === "auto" && terminalSupport.supported)) {
       try {
@@ -629,9 +680,9 @@ const MultiAuthPlugin: Plugin = async ({
       }
     }
 
-    if (!localDelivered && notifyBackend !== "terminal") {
+    if ((mirrorTerminalToSystem || !localDelivered) && notifyBackend !== "terminal") {
       try {
-        localDelivered = notifyMac(title, body, clickUrl);
+        localDelivered = notifyMac(title, body, clickUrl) || localDelivered;
       } catch {
         // ignore
       }
@@ -1018,7 +1069,9 @@ const MultiAuthPlugin: Plugin = async ({
                     const betterStore = loadStore();
                     const betterAccount = betterStore.accounts[betterAlias];
                     if (betterAccount) {
-                      const betterUsageSnapshot = getUsagePrioritySnapshot(betterAccount.rateLimits);
+                      const betterUsageSnapshot = getUsagePrioritySnapshot(
+                        betterAccount.rateLimits,
+                      );
                       if (compareAccountsByUsagePriority(betterAccount, account) < 0) {
                         if (isDebugEnabled()) {
                           console.log(

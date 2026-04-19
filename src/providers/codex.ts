@@ -2,7 +2,8 @@
 // Uses the existing multi-account store and wham/usage API
 // Endpoint: GET https://chatgpt.com/backend-api/wham/usage
 
-import { loadStore, listAccounts } from "../store.js";
+import { loadStore, listAccounts, updateAccount } from "../store.js";
+import { mergeRateLimits } from "../rate-limits.js";
 import { fetchUsageRateLimitsForAccount } from "../usage-limits.js";
 import type { ProviderAccountResult, ProviderResult, UsageProvider, UsageWindow } from "./types.js";
 
@@ -59,6 +60,14 @@ export const codexProvider: UsageProvider = {
 
         try {
           const result = await fetchUsageRateLimitsForAccount(acc);
+
+          // Persist fresh rate limits to store so rotation decisions use up-to-date data
+          if (result.rateLimits) {
+            updateAccount(acc.alias, {
+              rateLimits: mergeRateLimits(acc.rateLimits, result.rateLimits),
+              ...(result.planType ? { planType: result.planType } : {}),
+            });
+          }
 
           if (result.authInvalid) {
             return {

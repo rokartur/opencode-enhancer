@@ -127,6 +127,20 @@ function resolveSettings(includeEnvOverrides: boolean): SettingsResult {
       };
       source = "env";
     }
+
+    const envNotifyWhenTerminalActive = readEnv(
+      "OPENCODE_ENHANCER_NOTIFY_WHEN_TERMINAL_ACTIVE",
+      "OPENCODE_MULTI_AUTH_NOTIFY_WHEN_TERMINAL_ACTIVE",
+    );
+    if (envNotifyWhenTerminalActive !== undefined) {
+      const enabled =
+        envNotifyWhenTerminalActive.toLowerCase() === "true" || envNotifyWhenTerminalActive === "1";
+      settings.notifications = {
+        ...(settings.notifications || DEFAULT_NOTIFICATION_SETTINGS),
+        whenTerminalActive: enabled,
+      };
+      source = "env";
+    }
   }
 
   // Validate final settings
@@ -339,7 +353,8 @@ export function isFeatureEnabled(
 
 export function isNotificationEnabled(
   flag: keyof NonNullable<RotationSettings["notifications"]>,
+  includeEnvOverrides: boolean = false,
 ): boolean {
-  const settings = getRuntimeSettings();
+  const settings = includeEnvOverrides ? getSettings() : getRuntimeSettings();
   return settings.settings.notifications?.[flag] ?? DEFAULT_NOTIFICATION_SETTINGS[flag];
 }

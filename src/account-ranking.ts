@@ -2,7 +2,10 @@ import type { AccountCredentials, AccountRateLimits, RateLimitWindow } from "./t
 
 function getWindowRemaining(window?: RateLimitWindow, now: number = Date.now()): number | null {
   if (typeof window?.remaining !== "number") return null;
-  if (typeof window.resetAt === "number" && window.resetAt < now) return null;
+  if (typeof window.resetAt === "number" && window.resetAt < now) {
+    // Window has reset — remaining capacity is back to the full limit.
+    return window.limit ?? 100;
+  }
   return window.remaining;
 }
 
@@ -25,10 +28,11 @@ function compareRemainingDescending(a: number | null, b: number | null): number 
     return 0;
   }
 
-  // Unknown remaining is usually less preferred than a known value,
-  // except when the known value is already exhausted (<= 0).
-  if (aKnown) return a <= 0 ? 1 : -1;
-  if (bKnown) return b <= 0 ? -1 : 1;
+  // Unknown remaining is treated as most favorable: the account is
+  // either unused or its rate-limit window has already reset, so
+  // prefer it over any known (partially consumed) value.
+  if (aKnown) return 1;
+  if (bKnown) return -1;
   return 0;
 }
 

@@ -244,6 +244,7 @@ export interface NotificationSettings {
   taskComplete: boolean;
   error: boolean;
   question: boolean;
+  whenTerminalActive: boolean;
 }
 
 // Phase G: Default feature flags
@@ -257,6 +258,7 @@ export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   taskComplete: true,
   error: true,
   question: true,
+  whenTerminalActive: false,
 };
 
 // Phase F: Weighted rotation presets
@@ -342,6 +344,9 @@ export function sanitizeRotationSettings(input: unknown): Partial<RotationSettin
         : {}),
       ...(typeof input.notifications.question === "boolean"
         ? { question: input.notifications.question }
+        : {}),
+      ...(typeof input.notifications.whenTerminalActive === "boolean"
+        ? { whenTerminalActive: input.notifications.whenTerminalActive }
         : {}),
     };
     settings.notifications = notifications;
