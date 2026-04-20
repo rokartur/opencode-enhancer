@@ -246,7 +246,7 @@ Commands:
 
 Usage options:
   --provider <id>  Check a single provider (claude, codex, gemini, copilot,
-                    openrouter, opencode, kimi, minimax, zai, nanogpt, synthetic, chutes)
+                    openrouter, kimi, minimax, zai, nanogpt, synthetic, chutes)
   --json           Output raw JSON
   --verbose, -v    Show per-account details for multi-account providers
   --no-cache       Skip cache, always fetch fresh data

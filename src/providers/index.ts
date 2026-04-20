@@ -7,7 +7,6 @@ import { codexProvider } from './codex.js'
 import { geminiProvider } from './gemini.js'
 import { copilotProvider } from './copilot.js'
 import { openRouterProvider } from './openrouter.js'
-import { openCodeProvider } from './opencode.js'
 import { kimiProvider } from './kimi.js'
 import { miniMaxProvider } from './minimax.js'
 import { zaiProvider } from './zai.js'
@@ -22,7 +21,6 @@ export const allProviders: UsageProvider[] = [
   geminiProvider,
   copilotProvider,
   openRouterProvider,
-  openCodeProvider,
   kimiProvider,
   miniMaxProvider,
   zaiProvider,

@@ -112,6 +112,33 @@ interface SummaryTableLayout {
   resetWidth: number;
 }
 
+interface DetailTableLayout {
+  labelWidth: number;
+  usedWidth: number;
+  totalWidth: number;
+  leftWidth: number;
+  resetWidth: number;
+}
+
+interface TextDetailLine {
+  kind: "text";
+  text: string;
+}
+
+interface StatsDetailLine {
+  kind: "stats";
+  label: string;
+  used: string;
+  total: string;
+  left: string;
+  reset: string;
+  usedColor?: string;
+  totalColor?: string;
+  leftColor?: string;
+}
+
+type DetailLine = TextDetailLine | StatsDetailLine;
+
 interface SummaryRow {
   provider: string;
   status: "ok" | "error" | "auth_expired" | "not_configured";
@@ -121,7 +148,7 @@ interface SummaryRow {
   left: string;
   reset: string;
   usage?: ProviderUsage;
-  details: string[];
+  details: DetailLine[];
 }
 
 interface UsageTotals {
@@ -236,37 +263,60 @@ function formatUsageSummary(usage: ProviderUsage): string {
   return parts.join(` ${c.dim}·${c.reset} `);
 }
 
+function createTextDetail(text: string): DetailLine {
+  return { kind: "text", text };
+}
+
+function createStatsDetail(detail: Omit<StatsDetailLine, "kind">): DetailLine {
+  return { kind: "stats", ...detail };
+}
+
+function getUsageWindowDetailLine(
+  window: UsageWindow,
+  usage?: ProviderUsage,
+  index?: number,
+): DetailLine {
+  const pctUsed = Math.round(window.utilization);
+  const pctLeft = Math.max(0, 100 - pctUsed);
+  const aggregateTotals =
+    usage && typeof index === "number" && index === 0 && hasAbsoluteQuotaTotals(usage)
+      ? getUsageTotals(usage)
+      : undefined;
+  const windowTotals = aggregateTotals ?? getWindowTotals(window);
+
+  return createStatsDetail({
+    label: window.label,
+    used: windowTotals?.usedLabel ?? `${pctUsed}%`,
+    total: windowTotals?.totalLabel ?? "100%",
+    left: windowTotals?.remainingLabel ?? `${pctLeft}%`,
+    reset: stripAnsi(formatResetTime(window.resetsAt)),
+    usedColor: windowTotals ? c.red : utilizationColor(window.utilization),
+    totalColor: c.cyan,
+    leftColor: c.green,
+  });
+}
+
 function formatQuotaWindowDetails(
   window: UsageWindow,
   usage: ProviderUsage,
   index: number,
-): string {
-  const used = Math.round(window.utilization);
-  const left = Math.max(0, 100 - used);
-  const totals = index === 0 && hasAbsoluteQuotaTotals(usage) ? getUsageTotals(usage) : undefined;
-  const parts = [
-    `${c.bold}${window.label}${c.reset}`,
-    `${formatMiniChart(window.utilization)} ${utilizationColor(window.utilization)}${used}%${c.reset} ${c.dim}used${c.reset}`,
-  ];
-
-  if (totals) {
-    parts.push(
-      `${c.red}${totals.usedLabel}${c.reset} ${c.dim}used${c.reset}`,
-      `${c.cyan}${totals.totalLabel}${c.reset} ${c.dim}total${c.reset}`,
-      `${c.green}${totals.remainingLabel}${c.reset} ${c.dim}left${c.reset}`,
-    );
-  } else {
-    parts.push(`${utilizationColor(window.utilization)}${left}%${c.reset} ${c.dim}left${c.reset}`);
-  }
-
-  parts.push(`${c.dim}resets ${formatResetTime(window.resetsAt)}${c.reset}`);
-  return parts.join(` ${c.dim}·${c.reset} `);
+): DetailLine {
+  return getUsageWindowDetailLine(window, usage, index);
 }
 
-function formatUsageDetailLines(usage: ProviderUsage): string[] {
+function formatUsageDetailLines(usage: ProviderUsage): DetailLine[] {
   if (usage.type === "payAsYouGo") {
     return [
-      `${c.dim}credits${c.reset} ${c.red}$${usage.used.toFixed(2)}${c.reset} ${c.dim}used${c.reset} ${c.dim}·${c.reset} ${c.cyan}$${usage.total.toFixed(2)}${c.reset} ${c.dim}total${c.reset} ${c.dim}·${c.reset} ${c.green}$${usage.remaining.toFixed(2)}${c.reset} ${c.dim}left${c.reset}`,
+      createStatsDetail({
+        label: "credits",
+        used: `$${usage.used.toFixed(2)}`,
+        total: `$${usage.total.toFixed(2)}`,
+        left: `$${usage.remaining.toFixed(2)}`,
+        reset: "—",
+        usedColor: c.red,
+        totalColor: c.cyan,
+        leftColor: c.green,
+      }),
     ];
   }
 
@@ -281,8 +331,19 @@ function getStatusLabel(status: SummaryRow["status"]): string {
   return status;
 }
 
+function getStatusSymbol(status: SummaryRow["status"]): string {
+  if (status === "ok") return "●";
+  if (status === "auth_expired") return "!";
+  if (status === "not_configured") return "○";
+  return "✕";
+}
+
+function getStatusDisplayLabel(status: SummaryRow["status"]): string {
+  return `${getStatusSymbol(status)} ${getStatusLabel(status)}`;
+}
+
 function formatStatusCell(status: SummaryRow["status"], width: number): string {
-  const label = getStatusLabel(status);
+  const label = getStatusDisplayLabel(status);
   const color =
     status === "ok"
       ? c.green
@@ -297,6 +358,85 @@ function formatStatusCell(status: SummaryRow["status"], width: number): string {
 
 function formatMetricCell(value: string, width: number, color: string): string {
   return padLeft(`${color}${value}${c.reset}`, width);
+}
+
+function getDetailTableLayout(rows: SummaryRow[]): DetailTableLayout | undefined {
+  const statsLines = rows.flatMap((row) => row.details).filter(
+    (detail): detail is StatsDetailLine => detail.kind === "stats",
+  );
+
+  if (statsLines.length === 0) return undefined;
+
+  return {
+    labelWidth: clamp(
+      Math.max(10, visibleLength("Window"), ...statsLines.map((detail) => visibleLength(detail.label))),
+      10,
+      18,
+    ),
+    usedWidth: Math.max(4, visibleLength("Used"), ...statsLines.map((detail) => visibleLength(detail.used))),
+    totalWidth: Math.max(5, visibleLength("Total"), ...statsLines.map((detail) => visibleLength(detail.total))),
+    leftWidth: Math.max(4, visibleLength("Left"), ...statsLines.map((detail) => visibleLength(detail.left))),
+    resetWidth: Math.max(5, visibleLength("Reset"), ...statsLines.map((detail) => visibleLength(detail.reset))),
+  };
+}
+
+function getSummaryContentWidth(layout: SummaryTableLayout): number {
+  return (
+    layout.providerWidth +
+    COLUMN_GAP.length +
+    layout.statusWidth +
+    COLUMN_GAP.length +
+    layout.planWidth +
+    COLUMN_GAP.length +
+    layout.usedWidth +
+    COLUMN_GAP.length +
+    layout.totalWidth +
+    COLUMN_GAP.length +
+    layout.leftWidth +
+    COLUMN_GAP.length +
+    layout.resetWidth
+  );
+}
+
+function formatSummaryDivider(layout: SummaryTableLayout): string {
+  return `${TABLE_INDENT}${c.dim}${"─".repeat(getSummaryContentWidth(layout))}${c.reset}`;
+}
+
+function formatSectionHeader(
+  title: string,
+  layout: SummaryTableLayout,
+  meta?: string,
+): string {
+  const plainLabel = meta ? `${title} ${meta}` : title;
+  const fillerWidth = Math.max(0, getSummaryContentWidth(layout) - visibleLength(plainLabel) - 1);
+  const label = meta
+    ? `${c.bold}${title}${c.reset} ${c.dim}${meta}${c.reset}`
+    : `${c.bold}${title}${c.reset}`;
+
+  if (fillerWidth === 0) return `${TABLE_INDENT}${label}`;
+  return `${TABLE_INDENT}${label} ${c.dim}${"─".repeat(fillerWidth)}${c.reset}`;
+}
+
+function formatNotConfiguredSection(results: ProviderResult[]): string[] {
+  const names = results.map((result) => getProviderDisplayName(result));
+  if (names.length === 0) return [];
+
+  const labels = names.map((name) => `${c.dim}○${c.reset} ${name}`);
+  const widestLabel = Math.max(...labels.map((label) => visibleLength(label)));
+  const terminalWidth = Math.max(60, process.stdout.columns || 100);
+  const availableWidth = Math.max(20, terminalWidth - visibleLength(TABLE_INDENT));
+  const columnWidth = clamp(widestLabel, 16, 28);
+  const columns = Math.max(1, Math.min(labels.length, Math.floor((availableWidth + COLUMN_GAP.length) / (columnWidth + COLUMN_GAP.length))));
+  const rows: string[] = [];
+
+  for (let index = 0; index < labels.length; index += columns) {
+    const cells = labels
+      .slice(index, index + columns)
+      .map((label) => padRight(label, columnWidth));
+    rows.push(`${TABLE_INDENT}${cells.join(COLUMN_GAP)}`.trimEnd());
+  }
+
+  return rows;
 }
 
 function getPrimaryResetLabel(usage: ProviderUsage | undefined): string {
@@ -331,27 +471,11 @@ function getWindowTotals(window: UsageWindow): UsageTotals | undefined {
   };
 }
 
-function formatWindowDetail(window: UsageWindow): string {
-  const pctUsed = Math.round(window.utilization);
-  const pctLeft = Math.max(0, 100 - pctUsed);
-  const totals = getWindowTotals(window);
-  const parts = totals
-    ? [
-        `${c.red}${totals.usedLabel}${c.reset} ${c.dim}used${c.reset}`,
-        `${c.cyan}${totals.totalLabel}${c.reset} ${c.dim}total${c.reset}`,
-        `${c.green}${totals.remainingLabel}${c.reset} ${c.dim}left${c.reset}`,
-        `${utilizationColor(window.utilization)}${pctUsed}%${c.reset}`,
-      ]
-    : [
-        `${utilizationColor(window.utilization)}${pctUsed}%${c.reset} ${c.dim}used${c.reset}`,
-        `${c.green}${pctLeft}%${c.reset} ${c.dim}left${c.reset}`,
-      ];
-
-  parts.push(`${c.dim}resets ${stripAnsi(formatResetTime(window.resetsAt))}${c.reset}`);
-  return `${c.bold}${window.label}${c.reset}: ${parts.join(` ${c.dim}·${c.reset} `)}`;
+function formatWindowDetail(window: UsageWindow): DetailLine {
+  return getUsageWindowDetailLine(window);
 }
 
-function formatExtraBudgetDetail(window: UsageWindow): string | undefined {
+function formatExtraBudgetDetail(window: UsageWindow): DetailLine | undefined {
   const parts: string[] = [];
 
   if (window.extraBudgetEnabled !== undefined) {
@@ -376,12 +500,12 @@ function formatExtraBudgetDetail(window: UsageWindow): string | undefined {
 
   if (parts.length === 0) return undefined;
 
-  return `${c.bold}extra budget${c.reset}: ${parts.join(` ${c.dim}·${c.reset} `)}`;
+  return createTextDetail(`${c.bold}extra budget${c.reset}: ${parts.join(` ${c.dim}·${c.reset} `)}`);
 }
 
-function getResultDetailLines(result: ProviderResult, verbose: boolean): string[] {
+function getResultDetailLines(result: ProviderResult, verbose: boolean): DetailLine[] {
   if (result.status === "error" || result.status === "auth_expired") {
-    return result.error ? [result.error] : [];
+    return result.error ? [createTextDetail(result.error)] : [];
   }
 
   if (result.status !== "ok" || !result.usage) return [];
@@ -393,7 +517,7 @@ function getResultDetailLines(result: ProviderResult, verbose: boolean): string[
   const windows = getUsageWindows(result.usage);
   const extraBudgetDetails = windows
     .map((window) => formatExtraBudgetDetail(window))
-    .filter((detail): detail is string => !!detail);
+    .filter((detail): detail is DetailLine => !!detail);
 
   if (windows.length === 0) return [];
   if (!verbose && windows.length === 1) return extraBudgetDetails;
@@ -448,7 +572,7 @@ function getSummaryTableLayout(rows: SummaryRow[]): SummaryTableLayout {
     ),
     statusWidth: Math.max(
       14,
-      ...rows.map((row) => visibleLength(getStatusLabel(row.status))),
+      ...rows.map((row) => visibleLength(getStatusDisplayLabel(row.status))),
       visibleLength("Status"),
     ),
     planWidth: Math.max(10, ...rows.map((row) => visibleLength(row.plan)), visibleLength("Plan")),
@@ -485,8 +609,29 @@ function formatSummaryRow(row: SummaryRow, layout: SummaryTableLayout): string {
   return `${TABLE_INDENT}${providerCell}${COLUMN_GAP}${formatStatusCell(row.status, layout.statusWidth)}${COLUMN_GAP}${planCell}${COLUMN_GAP}${usedCell}${COLUMN_GAP}${totalCell}${COLUMN_GAP}${leftCell}${COLUMN_GAP}${resetCell}`;
 }
 
-function formatDetailLine(detail: string): string {
-  return `${TABLE_INDENT}  ${c.dim}↳${c.reset} ${detail}`;
+function formatDetailLine(
+  detail: DetailLine,
+  detailLayout: DetailTableLayout | undefined,
+  prefix: string = "  ",
+): string {
+  if (detail.kind === "text" || !detailLayout) {
+    const text = detail.kind === "text" ? detail.text : detail.label;
+    return `${TABLE_INDENT}${prefix}${c.dim}↳${c.reset} ${text}`;
+  }
+
+  const labelCell = padRight(
+    `${c.bold}${truncateText(detail.label, detailLayout.labelWidth)}${c.reset}`,
+    detailLayout.labelWidth,
+  );
+  const usedCell = formatMetricCell(detail.used, detailLayout.usedWidth, detail.usedColor || c.red);
+  const totalCell = formatMetricCell(detail.total, detailLayout.totalWidth, detail.totalColor || c.cyan);
+  const leftCell = formatMetricCell(detail.left, detailLayout.leftWidth, detail.leftColor || c.green);
+  const resetCell = padLeft(
+    detail.reset === "—" ? `${c.dim}—${c.reset}` : detail.reset,
+    detailLayout.resetWidth,
+  );
+
+  return `${TABLE_INDENT}${prefix}${c.dim}↳${c.reset} ${labelCell}${COLUMN_GAP}${c.dim}used${c.reset} ${usedCell}${COLUMN_GAP}${c.dim}total${c.reset} ${totalCell}${COLUMN_GAP}${c.dim}left${c.reset} ${leftCell}${COLUMN_GAP}${c.dim}reset${c.reset} ${resetCell}`;
 }
 
 function formatQuotaWindow(window: UsageWindow, usage: ProviderUsage): string {
@@ -607,8 +752,23 @@ function getRenderContext(): RenderContext {
   };
 }
 
-function hasAccountRows(result: ProviderResult): boolean {
-  return Array.isArray(result.accounts) && result.accounts.length > 0;
+function hasMultiAuthAccountRows(result: ProviderResult): boolean {
+  return result.providerId === "codex" && Array.isArray(result.accounts) && result.accounts.length > 0;
+}
+
+function getAccountTreeLabel(
+  result: ProviderResult,
+  accountLabel: string,
+  context: RenderContext,
+  index: number,
+  total: number,
+): string {
+  const branch = index === total - 1 ? "└─" : "├─";
+  return `${branch} ${getDisplayLabel(result, accountLabel, context)}`;
+}
+
+function getAccountDetailPrefix(index: number, total: number): string {
+  return index === total - 1 ? "   " : "│  ";
 }
 
 function getDisplayLabel(
@@ -672,7 +832,7 @@ function getTableLayout(results: ProviderResult[], context: RenderContext): Tabl
 
   const planLengths = results.flatMap((result) => {
     const plans: Array<string | undefined> = [];
-    if (!hasAccountRows(result)) {
+    if (!hasMultiAuthAccountRows(result)) {
       plans.push(getPlanLabel(result, result.usage, undefined, context, result.plan));
     }
     for (const account of result.accounts ?? []) {
@@ -758,10 +918,11 @@ function formatProviderHeaderRow(result: ProviderResult, layout: TableLayout): s
   return `${TABLE_INDENT}${c.bold}${name}${c.reset}${COLUMN_GAP}${" ".repeat(layout.usageWidth)}${COLUMN_GAP}${" ".repeat(layout.planWidth)}`;
 }
 
-function formatDetailRow(layout: TableLayout, detail: string): string {
+function formatDetailRow(layout: TableLayout, detail: DetailLine): string {
   const emptyProvider = " ".repeat(layout.providerWidth);
   const emptyPlan = " ".repeat(layout.planWidth);
-  return `${TABLE_INDENT}${emptyProvider}${COLUMN_GAP}${c.dim}↳${c.reset} ${detail}${COLUMN_GAP}${emptyPlan}`;
+  const content = detail.kind === "text" ? detail.text : detail.label;
+  return `${TABLE_INDENT}${emptyProvider}${COLUMN_GAP}${c.dim}↳${c.reset} ${content}${COLUMN_GAP}${emptyPlan}`;
 }
 
 function formatResultDetailRows(result: ProviderResult, layout: TableLayout): string[] {
@@ -923,9 +1084,10 @@ function renderTable(results: ProviderResult[], verbose: boolean = false): void 
   const notConfigured = results.filter((r) => r.status === "not_configured");
   const summaryRows: SummaryRow[] = [];
 
-  for (const result of results) {
-    if (hasAccountRows(result)) {
-      for (const account of result.accounts ?? []) {
+  for (const result of configured) {
+    if (hasMultiAuthAccountRows(result)) {
+      const accounts = result.accounts ?? [];
+      for (const [accountIndex, account] of accounts.entries()) {
         const subResult: ProviderResult = {
           providerId: result.providerId,
           providerName: account.label,
@@ -940,7 +1102,13 @@ function renderTable(results: ProviderResult[], verbose: boolean = false): void 
         summaryRows.push(
           buildSummaryRow(subResult, context, verbose, {
             rawLabel: account.label,
-            displayLabel: `  ${getDisplayLabel(result, account.label, context)}`,
+            displayLabel: getAccountTreeLabel(
+              result,
+              account.label,
+              context,
+              accountIndex,
+              accounts.length,
+            ),
           }),
         );
       }
@@ -950,19 +1118,40 @@ function renderTable(results: ProviderResult[], verbose: boolean = false): void 
     summaryRows.push(buildSummaryRow(result, context, verbose));
   }
 
-  const layout = getSummaryTableLayout(summaryRows);
+  const layout = getSummaryTableLayout(
+    summaryRows.length > 0
+      ? summaryRows
+      : [
+          {
+            provider: "Provider / Account",
+            status: "ok",
+            plan: "Plan",
+            used: "Used",
+            total: "Total",
+            left: "Left",
+            reset: "Reset",
+            details: [],
+          },
+        ],
+  );
+  const detailLayout = getDetailTableLayout(summaryRows);
 
   console.log();
   const header = `${TABLE_INDENT}${c.bold}${padRight("Provider / Account", layout.providerWidth)}${COLUMN_GAP}${padRight("Status", layout.statusWidth)}${COLUMN_GAP}${padRight("Plan", layout.planWidth)}${COLUMN_GAP}${padLeft("Used", layout.usedWidth)}${COLUMN_GAP}${padLeft("Total", layout.totalWidth)}${COLUMN_GAP}${padLeft("Left", layout.leftWidth)}${COLUMN_GAP}${padLeft("Reset", layout.resetWidth)}${c.reset}`;
-  const divider = `${TABLE_INDENT}${c.dim}${"─".repeat(visibleLength(header) - visibleLength(TABLE_INDENT))}${c.reset}`;
-  console.log(header);
-  console.log(divider);
+  const divider = formatSummaryDivider(layout);
+
+  if (configured.length > 0) {
+    console.log(header);
+    console.log(divider);
+  }
 
   for (const [resultIndex, result] of configured.entries()) {
-    if (hasAccountRows(result)) {
-      console.log(`${TABLE_INDENT}${c.bold}${getProviderDisplayName(result)}${c.reset}`);
+    if (hasMultiAuthAccountRows(result)) {
+      const accounts = result.accounts ?? [];
+      const accountCountLabel = `${accounts.length} account${accounts.length === 1 ? "" : "s"}`;
+      console.log(formatSectionHeader(getProviderDisplayName(result), layout, `(${accountCountLabel})`));
 
-      for (const account of result.accounts ?? []) {
+      for (const [accountIndex, account] of accounts.entries()) {
         const subResult: ProviderResult = {
           providerId: result.providerId,
           providerName: account.label,
@@ -976,18 +1165,18 @@ function renderTable(results: ProviderResult[], verbose: boolean = false): void 
 
         const row = buildSummaryRow(subResult, context, verbose, {
           rawLabel: account.label,
-          displayLabel: `  ${getDisplayLabel(result, account.label, context)}`,
+          displayLabel: getAccountTreeLabel(result, account.label, context, accountIndex, accounts.length),
         });
 
         console.log(formatSummaryRow(row, layout));
 
         for (const detail of row.details) {
-          console.log(formatDetailLine(detail));
+          console.log(formatDetailLine(detail, detailLayout, getAccountDetailPrefix(accountIndex, accounts.length)));
         }
       }
 
       if (resultIndex < configured.length - 1) {
-        console.log();
+        console.log(divider);
       }
 
       continue;
@@ -996,26 +1185,28 @@ function renderTable(results: ProviderResult[], verbose: boolean = false): void 
     const row = buildSummaryRow(result, context, verbose);
     console.log(formatSummaryRow(row, layout));
     for (const detail of row.details) {
-      console.log(formatDetailLine(detail));
+      console.log(formatDetailLine(detail, detailLayout));
     }
 
     if (resultIndex < configured.length - 1) {
-      console.log();
+      console.log(divider);
     }
   }
 
   if (notConfigured.length > 0) {
-    if (configured.length > 0) {
-      console.log(divider);
+    console.log(divider);
+
+    console.log(`${TABLE_INDENT}${c.bold}Not configured${c.reset} ${c.dim}(${notConfigured.length})${c.reset}`);
+    for (const line of formatNotConfiguredSection(notConfigured)) {
+      console.log(line);
     }
 
-    for (const result of notConfigured) {
-      const row = buildSummaryRow(result, context, verbose);
-      console.log(formatSummaryRow(row, layout));
-    }
+    console.log(divider);
   }
 
-  console.log(divider);
+  if (configured.length > 0 && notConfigured.length === 0) {
+    console.log(divider);
+  }
 
   const okCount = configured.filter((r) => r.status === "ok").length;
   const errCount = configured.filter(
