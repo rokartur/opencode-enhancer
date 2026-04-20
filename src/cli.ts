@@ -106,14 +106,9 @@ async function main(): Promise<void> {
   switch (command) {
     case "add":
     case "login": {
-      if (!alias) {
-        console.error("Usage: opencode-enhancer add <alias>");
-        console.error("Example: opencode-enhancer add work");
-        process.exit(1);
-      }
       try {
         const account = await loginAccount(alias);
-        console.log(`\nAccount "${alias}" added successfully!`);
+        console.log(`\nAccount "${account.alias}" added successfully!`);
         console.log(`Email: ${account.email || "unknown"}`);
       } catch (err) {
         console.error(`Failed to add account: ${err}`);
@@ -147,7 +142,7 @@ async function main(): Promise<void> {
       const accounts = listAccounts();
       if (accounts.length === 0) {
         console.log("No accounts configured.");
-        console.log("Add one with: opencode-enhancer add <alias>");
+        console.log("Add one with: opencode-enhancer add [alias-base]");
       } else {
         console.log("\nConfigured accounts:\n");
         for (const acc of accounts) {
@@ -170,7 +165,7 @@ async function main(): Promise<void> {
       console.log(`Active: ${store.activeAlias || "none"}\n`);
 
       if (accounts.length === 0) {
-        console.log("No accounts configured. Run: opencode-enhancer add <alias>\n");
+        console.log("No accounts configured. Run: opencode-enhancer add [alias-base]\n");
         return;
       }
 

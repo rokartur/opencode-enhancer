@@ -66,11 +66,15 @@ export async function createAuthorizationFlow(port?: number): Promise<Authorizat
   return { pkce, state, url: authUrl.toString(), redirectUri, port: redirectPort }
 }
 
-function buildGeneratedAlias(email: string | undefined): string {
+function buildGeneratedAlias(options?: {
+  preferredAlias?: string
+  email?: string
+}): string {
   const store = loadStore()
   const existingAliases = new Set(Object.keys(store.accounts))
-  const emailLocalPart = email?.split('@')[0]?.trim().toLowerCase()
-  const sanitizedBase = (emailLocalPart || 'account')
+  const preferredAlias = options?.preferredAlias?.trim().toLowerCase()
+  const emailLocalPart = options?.email?.split('@')[0]?.trim().toLowerCase()
+  const sanitizedBase = (preferredAlias || emailLocalPart || 'account')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
   const base = sanitizedBase || 'account'
@@ -222,7 +226,7 @@ export async function loginAccount(
           getAccountIdFromClaims(idClaims) ||
           getAccountIdFromClaims(accessClaims)
 
-        const resolvedAlias = alias || buildGeneratedAlias(email)
+        const resolvedAlias = buildGeneratedAlias({ preferredAlias: alias, email })
 
         const store = addAccount(resolvedAlias, {
           accessToken: tokens.access_token,
@@ -267,7 +271,9 @@ export async function loginAccount(
         activeFlow = await createAuthorizationFlow(actualPort)
       }
 
-      console.log(`\n[enhancer] Login for account "${alias || 'new account'}"`)
+      console.log(
+        `\n[enhancer] Login for ${alias ? `alias base "${alias}"` : 'a new account'}`
+      )
       console.log(`[enhancer] Open this URL in your browser:\n`)
       console.log(`  ${activeFlow.url}\n`)
       console.log(`[enhancer] Waiting for callback on port ${actualPort}...`)

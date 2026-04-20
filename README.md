@@ -56,13 +56,16 @@ Other registry plugins are still updated with `@latest`.
 ## CLI
 
 ```bash
-opencode-enhancer add <alias>
+opencode-enhancer add [alias-base]
 opencode-enhancer remove
 opencode-enhancer list
 opencode-enhancer status
 opencode-enhancer usage
 opencode-enhancer plugins update --dry-run
 ```
+
+`add` now behaves like the TUI flow: it always creates a randomized alias suffix.
+If you pass `alias-base`, it is used as the alias prefix, e.g. `work-a1b2c3`.
 
 ## Data Locations
 
