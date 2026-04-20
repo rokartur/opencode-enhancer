@@ -27,6 +27,12 @@ export interface UsageWindow {
   remaining?: number;
   /** Total entitlement within this window (if available) */
   entitlement?: number;
+  /** Whether paid overage / extra budget is enabled for this window */
+  extraBudgetEnabled?: boolean;
+  /** Configured paid overage / extra budget amount (if exposed by the provider) */
+  extraBudgetTotal?: number;
+  /** Amount already spent / consumed from paid overage / extra budget */
+  extraBudgetUsed?: number;
 }
 
 export interface QuotaBasedUsage {

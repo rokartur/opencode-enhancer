@@ -1,5 +1,7 @@
+import { ensureValidToken } from './auth.js'
 import { getBlockingRateLimitResetAt, hasMeaningfulRateLimits } from './rate-limits.js'
 import { fetchWithTimeout } from './providers/types.js'
+import { loadStore } from './store.js'
 import type { AccountCredentials, AccountRateLimits, RateLimitWindow } from './types.js'
 
 const DEFAULT_USAGE_BASE_URL = 'https://chatgpt.com/backend-api'
@@ -166,7 +168,19 @@ export function classifyUsageApiFailure(
 export async function fetchUsageRateLimitsForAccount(
   account: AccountCredentials
 ): Promise<UsageRateLimitFetchResult> {
-  const token = account.accessToken?.trim()
+  const refreshedToken = await ensureValidToken(account.alias)
+  const latestAccount = loadStore().accounts[account.alias] || account
+
+  if (latestAccount.authInvalid) {
+    return {
+      source: 'usage-api',
+      error: 'Authentication expired; token refresh failed',
+      shouldProbeFallback: false,
+      authInvalid: true
+    }
+  }
+
+  const token = (refreshedToken || latestAccount.accessToken)?.trim()
   if (!token) {
     return {
       source: 'usage-api',
@@ -179,8 +193,8 @@ export async function fetchUsageRateLimitsForAccount(
     Authorization: `Bearer ${token}`,
     'User-Agent': 'codex-cli'
   }
-  if (account.accountId) {
-    headers['ChatGPT-Account-Id'] = account.accountId
+  if (latestAccount.accountId) {
+    headers['ChatGPT-Account-Id'] = latestAccount.accountId
   }
 
   let res: Response

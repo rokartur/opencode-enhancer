@@ -13,10 +13,25 @@ const USER_ENDPOINT = "https://api.github.com/user";
 const COPILOT_INTERNAL_ENDPOINT = "https://api.github.com/copilot_internal/user";
 
 interface QuotaSnapshot {
-  entitlement?: number;
-  remaining?: number;
+  entitlement?: number | string;
+  remaining?: number | string;
+  quota_remaining?: number | string;
+  percent_remaining?: number | string;
   unlimited?: boolean;
   overage_permitted?: boolean;
+  overage_count?: number | string;
+  quota_id?: string;
+  has_quota?: boolean;
+  quota_reset_at?: number | string;
+  overage_budget?: number | string;
+  budget?: number | string;
+  budget_total?: number | string;
+  spending_limit?: number | string;
+  extra_budget?: number | string;
+  additional_budget?: number | string;
+  spent?: number | string;
+  amount_spent?: number | string;
+  budget_spent?: number | string;
 }
 
 interface CopilotInternalResponse {
@@ -30,6 +45,22 @@ interface CopilotInternalResponse {
   quota_snapshots?: Record<string, QuotaSnapshot>;
   monthly_quotas?: { completions?: number; chat?: number };
   limited_user_quotas?: { completions?: number; chat?: number };
+  premium_budget?: number | string;
+  premium_budget_total?: number | string;
+  premium_budget_spent?: number | string;
+  premium_spending_limit?: number | string;
+  overage_budget?: number | string;
+  overage_spent?: number | string;
+}
+
+interface NormalizedQuotaSnapshot {
+  entitlement?: number;
+  remaining?: number;
+  utilization: number;
+  extraBudgetEnabled: boolean;
+  extraBudgetTotal?: number;
+  extraBudgetUsed?: number;
+  resetsAt?: number;
 }
 
 function parseQuotaResetDate(raw: string | undefined): number | undefined {
@@ -40,6 +71,100 @@ function parseQuotaResetDate(raw: string | undefined): number | undefined {
   } catch {
     return undefined;
   }
+}
+
+function parseNumeric(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().replace(/[$,]/g, "");
+    if (!normalized) return undefined;
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function pickNumeric(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    const parsed = parseNumeric(value);
+    if (parsed !== undefined) return parsed;
+  }
+  return undefined;
+}
+
+function clampPercent(value: number): number {
+  return Math.max(0, Math.min(100, value));
+}
+
+function parseQuotaResetAt(raw: unknown): number | undefined {
+  const value = parseNumeric(raw);
+  if (value === undefined || value <= 0) return undefined;
+  return value > 1_000_000_000_000 ? value : value * 1000;
+}
+
+function normalizeQuotaSnapshot(
+  snapshot: QuotaSnapshot | undefined,
+  fallbackResetsAt: number | undefined,
+  response: CopilotInternalResponse | undefined,
+): NormalizedQuotaSnapshot | undefined {
+  if (!snapshot) return undefined;
+
+  const entitlement = pickNumeric(snapshot.entitlement);
+  const rawRemaining = pickNumeric(snapshot.quota_remaining, snapshot.remaining);
+  const percentRemaining = pickNumeric(snapshot.percent_remaining);
+  const extraBudgetTotal = pickNumeric(
+    snapshot.overage_budget,
+    snapshot.budget_total,
+    snapshot.spending_limit,
+    snapshot.extra_budget,
+    snapshot.additional_budget,
+    snapshot.budget,
+    response?.premium_budget_total,
+    response?.premium_spending_limit,
+    response?.premium_budget,
+    response?.overage_budget,
+  );
+
+  let extraBudgetUsed = pickNumeric(
+    snapshot.overage_count,
+    snapshot.budget_spent,
+    snapshot.amount_spent,
+    snapshot.spent,
+    response?.premium_budget_spent,
+    response?.overage_spent,
+  );
+
+  if (typeof rawRemaining === "number" && rawRemaining < 0) {
+    extraBudgetUsed = Math.max(extraBudgetUsed || 0, Math.abs(rawRemaining));
+  }
+
+  const remaining =
+    rawRemaining !== undefined
+      ? Math.max(0, rawRemaining)
+      : entitlement !== undefined && percentRemaining !== undefined
+        ? (entitlement * clampPercent(percentRemaining)) / 100
+        : undefined;
+
+  let utilization = 0;
+  if (snapshot.unlimited) {
+    utilization = 0;
+  } else if (percentRemaining !== undefined) {
+    utilization = clampPercent(100 - percentRemaining);
+  } else if (entitlement !== undefined && entitlement > 0 && rawRemaining !== undefined) {
+    utilization = clampPercent(((entitlement - Math.max(0, rawRemaining)) / entitlement) * 100);
+  } else if (rawRemaining !== undefined && rawRemaining < 0) {
+    utilization = 100;
+  }
+
+  return {
+    entitlement,
+    remaining,
+    utilization,
+    extraBudgetEnabled: !!snapshot.overage_permitted,
+    extraBudgetTotal,
+    extraBudgetUsed,
+    resetsAt: parseQuotaResetAt(snapshot.quota_reset_at) || fallbackResetsAt,
+  };
 }
 
 function formatPlanName(plan: string | undefined): string {
@@ -155,12 +280,21 @@ export const copilotProvider: UsageProvider = {
       let entitlement: number | undefined;
       let overagePermitted = false;
       let isUnlimited = false;
+      let extraBudgetTotal: number | undefined;
+      let extraBudgetUsed: number | undefined;
+
+      const quotaResetsAt = parseQuotaResetDate(
+        copilotData?.quota_reset_date_utc ||
+          copilotData?.quota_reset_date ||
+          copilotData?.limited_user_reset_date,
+      );
 
       if (copilotData?.quota_snapshots) {
         // Prefer premium_interactions, then sum all snapshots
         const snapshots = copilotData.quota_snapshots;
         const premium =
           snapshots.premium_interactions ??
+          snapshots.premium_models ??
           snapshots.premium_requests ??
           snapshots.premium ??
           Object.values(
@@ -171,44 +305,28 @@ export const copilotProvider: UsageProvider = {
 
         if (premium) {
           // Premium interactions is the authoritative quota for individual pro plans
+          const normalizedPremium = normalizeQuotaSnapshot(premium, quotaResetsAt, copilotData);
+
           if (premium.unlimited) {
             isUnlimited = true;
-          } else {
-            entitlement = premium.entitlement ?? 0;
-            const premiumsRemaining = premium.remaining ?? 0;
-            overagePermitted = !!premium.overage_permitted;
-            // If remaining is negative, user is in overage
-            if (premiumsRemaining < 0) {
-              utilization =
-                entitlement > 0
-                  ? ((entitlement + Math.abs(premiumsRemaining)) / entitlement) * 100
-                  : 100;
-            } else if (entitlement > 0) {
-              utilization = ((entitlement - premiumsRemaining) / entitlement) * 100;
-            }
-            remaining = Math.max(0, premiumsRemaining);
           }
 
+          entitlement = normalizedPremium?.entitlement;
+          remaining = normalizedPremium?.remaining;
+          utilization = normalizedPremium?.utilization ?? 0;
+          overagePermitted = normalizedPremium?.extraBudgetEnabled ?? false;
+          extraBudgetTotal = normalizedPremium?.extraBudgetTotal;
+          extraBudgetUsed = normalizedPremium?.extraBudgetUsed;
+
           windows.push({
-            utilization: isUnlimited
-              ? 0
-              : premium.remaining !== undefined
-                ? premium.remaining < 0
-                  ? 100
-                  : Math.round(
-                      (((premium.entitlement ?? 0) - premium.remaining) /
-                        (premium.entitlement || 1)) *
-                        100,
-                    )
-                : Math.round(utilization),
+            utilization: Math.round(isUnlimited ? 0 : normalizedPremium?.utilization ?? utilization),
             label: `premium${plan ? ` (${planLabel})` : ""}`,
-            resetsAt: parseQuotaResetDate(
-              copilotData.quota_reset_date_utc ||
-                copilotData.quota_reset_date ||
-                copilotData.limited_user_reset_date,
-            ),
+            resetsAt: normalizedPremium?.resetsAt || quotaResetsAt,
             remaining,
             entitlement,
+            extraBudgetEnabled: overagePermitted,
+            extraBudgetTotal,
+            extraBudgetUsed,
           });
         } else {
           // Sum all snapshot categories
@@ -217,13 +335,23 @@ export const copilotProvider: UsageProvider = {
           let anyUnlimited = false;
 
           for (const [, snap] of Object.entries(snapshots)) {
+            const normalized = normalizeQuotaSnapshot(snap, quotaResetsAt, copilotData);
             if (snap.unlimited) {
               anyUnlimited = true;
             }
-            if (snap.entitlement !== undefined && snap.entitlement > 0) {
-              totalEntitlement += snap.entitlement;
-              if (snap.remaining !== undefined) {
-                totalRemaining += snap.remaining;
+            if (normalized?.extraBudgetEnabled) {
+              overagePermitted = true;
+            }
+            if (normalized?.extraBudgetTotal !== undefined) {
+              extraBudgetTotal = (extraBudgetTotal || 0) + normalized.extraBudgetTotal;
+            }
+            if (normalized?.extraBudgetUsed !== undefined) {
+              extraBudgetUsed = (extraBudgetUsed || 0) + normalized.extraBudgetUsed;
+            }
+            if (normalized?.entitlement !== undefined && normalized.entitlement > 0) {
+              totalEntitlement += normalized.entitlement;
+              if (normalized.remaining !== undefined) {
+                totalRemaining += normalized.remaining;
               }
             }
           }
@@ -232,25 +360,21 @@ export const copilotProvider: UsageProvider = {
             isUnlimited = true;
             utilization = 0;
           } else if (totalEntitlement > 0) {
-            const used =
-              totalRemaining < 0
-                ? totalEntitlement + Math.abs(totalRemaining)
-                : totalEntitlement - totalRemaining;
+            const used = totalEntitlement - Math.max(0, totalRemaining);
             utilization = totalEntitlement > 0 ? (used / totalEntitlement) * 100 : 0;
             entitlement = totalEntitlement;
             remaining = Math.max(0, totalRemaining);
           }
 
           windows.push({
-            utilization: Math.round(utilization),
+            utilization: Math.round(clampPercent(utilization)),
             label: plan ? `(${planLabel})` : "quota",
-            resetsAt: parseQuotaResetDate(
-              copilotData.quota_reset_date_utc ||
-                copilotData.quota_reset_date ||
-                copilotData.limited_user_reset_date,
-            ),
+            resetsAt: quotaResetsAt,
             remaining,
             entitlement,
+            extraBudgetEnabled: overagePermitted,
+            extraBudgetTotal,
+            extraBudgetUsed,
           });
         }
       } else if (copilotData?.monthly_quotas) {
@@ -262,11 +386,7 @@ export const copilotProvider: UsageProvider = {
         windows.push({
           utilization: 0,
           label: `monthly${plan ? ` (${planLabel})` : ""}`,
-          resetsAt: parseQuotaResetDate(
-            copilotData.quota_reset_date_utc ||
-              copilotData.quota_reset_date ||
-              copilotData.limited_user_reset_date,
-          ),
+          resetsAt: quotaResetsAt,
           remaining,
           entitlement,
         });
@@ -279,11 +399,7 @@ export const copilotProvider: UsageProvider = {
         windows.push({
           utilization: 0,
           label: `limited${plan ? ` (${planLabel})` : ""}`,
-          resetsAt: parseQuotaResetDate(
-            copilotData.quota_reset_date_utc ||
-              copilotData.quota_reset_date ||
-              copilotData.limited_user_reset_date,
-          ),
+          resetsAt: quotaResetsAt,
           remaining,
           entitlement,
         });
@@ -334,7 +450,7 @@ export const copilotProvider: UsageProvider = {
         status: "ok",
         usage: {
           type: "quotaBased",
-          utilization: Math.round(utilization),
+          utilization: Math.round(clampPercent(utilization)),
           remaining,
           entitlement,
           windows,
@@ -352,7 +468,7 @@ export const copilotProvider: UsageProvider = {
         plan: planLabel,
         usage: {
           type: "quotaBased",
-          utilization: Math.round(utilization),
+          utilization: Math.round(clampPercent(utilization)),
           remaining,
           entitlement,
           windows,

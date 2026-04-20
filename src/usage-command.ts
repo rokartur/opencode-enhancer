@@ -159,6 +159,13 @@ function formatCount(value: number): string {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(value);
 }
 
+function formatBudgetCount(value: number): string {
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: Number.isInteger(value) ? 0 : 1,
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
 function getUsageWindows(usage: ProviderUsage): UsageWindow[] {
   if (usage.type !== "quotaBased") return [];
   return usage.windows.filter(
@@ -344,6 +351,34 @@ function formatWindowDetail(window: UsageWindow): string {
   return `${c.bold}${window.label}${c.reset}: ${parts.join(` ${c.dim}·${c.reset} `)}`;
 }
 
+function formatExtraBudgetDetail(window: UsageWindow): string | undefined {
+  const parts: string[] = [];
+
+  if (window.extraBudgetEnabled !== undefined) {
+    parts.push(
+      window.extraBudgetEnabled
+        ? `${c.green}enabled${c.reset}`
+        : `${c.dim}disabled${c.reset}`,
+    );
+  }
+
+  if (typeof window.extraBudgetTotal === "number") {
+    parts.push(
+      `${c.cyan}${formatBudgetCount(window.extraBudgetTotal)}${c.reset} ${c.dim}set${c.reset}`,
+    );
+  }
+
+  if (typeof window.extraBudgetUsed === "number") {
+    parts.push(
+      `${c.red}${formatBudgetCount(window.extraBudgetUsed)}${c.reset} ${c.dim}spent${c.reset}`,
+    );
+  }
+
+  if (parts.length === 0) return undefined;
+
+  return `${c.bold}extra budget${c.reset}: ${parts.join(` ${c.dim}·${c.reset} `)}`;
+}
+
 function getResultDetailLines(result: ProviderResult, verbose: boolean): string[] {
   if (result.status === "error" || result.status === "auth_expired") {
     return result.error ? [result.error] : [];
@@ -356,10 +391,14 @@ function getResultDetailLines(result: ProviderResult, verbose: boolean): string[
   }
 
   const windows = getUsageWindows(result.usage);
-  if (windows.length === 0) return [];
-  if (!verbose && windows.length === 1) return [];
+  const extraBudgetDetails = windows
+    .map((window) => formatExtraBudgetDetail(window))
+    .filter((detail): detail is string => !!detail);
 
-  return windows.map((window) => formatWindowDetail(window));
+  if (windows.length === 0) return [];
+  if (!verbose && windows.length === 1) return extraBudgetDetails;
+
+  return [...windows.map((window) => formatWindowDetail(window)), ...extraBudgetDetails];
 }
 
 function buildSummaryRow(
