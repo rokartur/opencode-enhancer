@@ -1,6 +1,7 @@
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
+import { buildRandomizedAlias } from './alias.js'
 import { addAccount, loadStore, setActiveAlias, updateAccount } from './store.js'
 import { decodeJwtPayload } from './jwt.js'
 import type { AccountCredentials } from './types.js'
@@ -188,15 +189,11 @@ function fingerprintTokens(tokens: CodexAuthTokens): string {
 }
 
 function buildAlias(email: string | undefined, accountId: string | undefined, store: ReturnType<typeof loadStore>): string {
-  const base = email?.split('@')[0] || accountId?.slice(0, 8) || `account-${Date.now()}`
-  const existing = new Set(Object.keys(store.accounts))
-  let candidate = base || `account-${Date.now()}`
-  let suffix = 1
-  while (existing.has(candidate)) {
-    candidate = `${base}-${suffix}`
-    suffix += 1
-  }
-  return candidate
+  return buildRandomizedAlias({
+    email,
+    accountId,
+    existingAliases: new Set(Object.keys(store.accounts))
+  })
 }
 
 function findMatchingAlias(
@@ -285,7 +282,10 @@ export function resolveAliasForCurrentAuth(store?: ReturnType<typeof loadStore>)
   )
 }
 
-export function syncCodexAuthFile(options?: { setActiveAlias?: boolean }): {
+export function syncCodexAuthFile(options?: {
+  setActiveAlias?: boolean
+  allowAdd?: boolean
+}): {
   alias: string | null
   added: boolean
   updated: boolean
@@ -293,6 +293,7 @@ export function syncCodexAuthFile(options?: { setActiveAlias?: boolean }): {
   authAccountId?: string
 } {
   const shouldSetActiveAlias = options?.setActiveAlias !== false
+  const allowAdd = options?.allowAdd !== false
   const auth = loadCodexAuthFile()
   const normalized = normalizeTokens(auth)
   if (!normalized?.accessToken || !normalized.refreshToken) {
@@ -359,6 +360,16 @@ export function syncCodexAuthFile(options?: { setActiveAlias?: boolean }): {
       setActiveAlias(alias)
     }
     return { alias, added: false, updated: true, authEmail: email, authAccountId: accountId }
+  }
+
+  if (!allowAdd) {
+    return {
+      alias: null,
+      added: false,
+      updated: false,
+      authEmail: email,
+      authAccountId: accountId
+    }
   }
 
   const newAlias = buildAlias(email, accountId, store)

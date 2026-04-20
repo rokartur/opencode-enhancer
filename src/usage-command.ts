@@ -814,7 +814,10 @@ function isFullUsageCache(results: ProviderResult[]): boolean {
 }
 
 export async function runUsageCommand(opts: UsageCommandOptions): Promise<void> {
-  syncCodexAuthFile({ setActiveAlias: false });
+  // `usage` should be effectively read-only for local account configuration:
+  // refresh existing synced accounts, but do not resurrect accounts that the
+  // user intentionally removed from the enhancer store.
+  syncCodexAuthFile({ setActiveAlias: false, allowAdd: false });
   syncActiveAliasFromOpenCodeAuth();
 
   const providerIds = opts.provider ? [opts.provider] : undefined;

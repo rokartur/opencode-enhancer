@@ -1,4 +1,5 @@
 import type { Auth } from '@opencode-ai/sdk'
+import { buildRandomizedAlias } from './alias.js'
 import { addAccount, loadStore, setActiveAlias, updateAccount } from './store.js'
 import { decodeJwtPayload } from './jwt.js'
 import { getAccountIdFromClaims, getEmailFromClaims, getNameFromClaims } from './codex-auth.js'
@@ -40,14 +41,10 @@ function findAccountAliasByEmail(email: string, store: ReturnType<typeof loadSto
 }
 
 function buildAlias(email: string | undefined, existingAliases: Set<string>): string {
-  const base = email ? email.split('@')[0] : 'account'
-  let candidate = base || 'account'
-  let suffix = 1
-  while (existingAliases.has(candidate)) {
-    candidate = `${base}-${suffix}`
-    suffix += 1
-  }
-  return candidate
+  return buildRandomizedAlias({
+    email,
+    existingAliases
+  })
 }
 
 export async function syncAuthFromOpenCode(getAuth: () => Promise<Auth>): Promise<void> {

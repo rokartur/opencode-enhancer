@@ -2,6 +2,7 @@ import { generatePKCE } from '@openauthjs/openauth/pkce'
 import { randomBytes } from 'node:crypto'
 import * as http from 'http'
 import * as url from 'url'
+import { buildRandomizedAlias } from './alias.js'
 import { addAccount, updateAccount, loadStore } from './store.js'
 import { clearAuthInvalid } from './rotation.js'
 import { decodeJwtPayload } from './jwt.js'
@@ -71,19 +72,11 @@ function buildGeneratedAlias(options?: {
   email?: string
 }): string {
   const store = loadStore()
-  const existingAliases = new Set(Object.keys(store.accounts))
-  const preferredAlias = options?.preferredAlias?.trim().toLowerCase()
-  const emailLocalPart = options?.email?.split('@')[0]?.trim().toLowerCase()
-  const sanitizedBase = (preferredAlias || emailLocalPart || 'account')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-  const base = sanitizedBase || 'account'
-
-  while (true) {
-    const suffix = randomBytes(3).toString('hex')
-    const alias = `${base}-${suffix}`
-    if (!existingAliases.has(alias)) return alias
-  }
+  return buildRandomizedAlias({
+    preferredAlias: options?.preferredAlias,
+    email: options?.email,
+    existingAliases: new Set(Object.keys(store.accounts))
+  })
 }
 
 function tryListenOnPort(server: http.Server, port: number): Promise<void> {

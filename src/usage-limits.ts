@@ -122,6 +122,13 @@ function parseUsageFailure(rawText: string): { code?: string; message?: string }
   }
 }
 
+function formatUsageApiError(status: number, rawText: string): string {
+  const trimmed = rawText.trim()
+  const { message, code } = parseUsageFailure(rawText)
+  const detail = message || code || (trimmed ? trimmed.slice(0, 280) : '')
+  return `Usage API returned ${status}${detail ? `: ${detail}` : ''}`
+}
+
 export function classifyUsageApiFailure(
   status: number,
   rawText: string
@@ -194,11 +201,10 @@ export async function fetchUsageRateLimitsForAccount(
   }
 
   if (!res.ok) {
-    const trimmed = rawText.trim()
     const classification = classifyUsageApiFailure(res.status, rawText)
     return {
       source: 'usage-api',
-      error: `Usage API returned ${res.status}${trimmed ? `: ${trimmed.slice(0, 280)}` : ''}`,
+      error: formatUsageApiError(res.status, rawText),
       ...classification
     }
   }
