@@ -4,6 +4,7 @@ import { isForceActive, checkAndAutoClearForce, getForceState, clearForce } from
 import { getRuntimeSettings, calculateWeightedSelection } from "./settings.js";
 import { compareAccountsByUsagePriority } from "./account-ranking.js";
 import type { AccountCredentials, AccountRateLimits, DEFAULT_CONFIG } from "./types.js";
+import { AUTO_SWITCH_THRESHOLD_DEFAULT } from "./types.js";
 
 export interface RotationResult {
   account: AccountCredentials;
@@ -338,20 +339,15 @@ export async function getNextAccount(
           });
         });
 
-        // Sticky tiebreaker: if the currently active account is among the
-        // candidates and ranks equally to the top candidate, prefer it so
-        // that a manual switch in the TUI is respected.
+        // Sticky preference: keep the active account unless it's genuinely
+        // running low on capacity. This prevents unnecessary switches when
+        // the active account still has plenty of usage remaining.
         const active = store.activeAlias;
         if (active && sorted.length > 1 && sorted[0] !== active && sorted.includes(active)) {
-          const topAccount = store.accounts[sorted[0]];
           const activeAccount = store.accounts[active];
-          const cmp = compareAccountsByUsagePriority(activeAccount, topAccount, {
-            healthPriorityA: healthMap.get(active)?.priority,
-            healthPriorityB: healthMap.get(sorted[0])?.priority,
-            now,
-          });
-          // cmp === 0 means equal rank — promote active to front
-          if (cmp === 0) {
+          const activeMinRemaining = getMinRemaining(activeAccount.rateLimits);
+          const switchFloor = 100 - AUTO_SWITCH_THRESHOLD_DEFAULT;
+          if (activeMinRemaining >= switchFloor) {
             const idx = sorted.indexOf(active);
             sorted.splice(idx, 1);
             sorted.unshift(active);
