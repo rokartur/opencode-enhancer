@@ -36,6 +36,27 @@ function compareRemainingDescending(a: number | null, b: number | null): number 
   return 0;
 }
 
+export function getMinRemaining(rateLimits?: AccountRateLimits, now: number = Date.now()): number {
+  const windows = [rateLimits?.fiveHour, rateLimits?.weekly];
+  const values: number[] = [];
+  for (const w of windows) {
+    if (typeof w?.remaining !== "number") continue;
+    if (typeof w.resetAt === "number" && w.resetAt < now) continue;
+    values.push(w.remaining);
+  }
+  if (values.length === 0) return Infinity;
+  return Math.min(...values);
+}
+
+function compareMinRemainingValues(a: number, b: number): number {
+  const aKnown = Number.isFinite(a);
+  const bKnown = Number.isFinite(b);
+  if (aKnown && bKnown) return b - a;
+  if (aKnown) return 1;
+  if (bKnown) return -1;
+  return 0;
+}
+
 export function compareAccountsByUsagePriority(
   accountA: AccountCredentials,
   accountB: AccountCredentials,
@@ -46,6 +67,13 @@ export function compareAccountsByUsagePriority(
   },
 ): number {
   const now = options?.now ?? Date.now();
+
+  const minRemainingDiff = compareMinRemainingValues(
+    getMinRemaining(accountA.rateLimits, now),
+    getMinRemaining(accountB.rateLimits, now),
+  );
+  if (minRemainingDiff !== 0) return minRemainingDiff;
+
   const usageA = getUsagePrioritySnapshot(accountA.rateLimits, now);
   const usageB = getUsagePrioritySnapshot(accountB.rateLimits, now);
 

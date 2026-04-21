@@ -1,89 +1,71 @@
-import * as fs from 'fs'
-import * as path from 'path'
-import * as os from 'os'
-import * as crypto from 'node:crypto'
-import { hasMeaningfulRateLimits } from './rate-limits.js'
+import * as fs from "fs";
+import * as path from "path";
+import * as os from "os";
+import * as crypto from "node:crypto";
+import { hasMeaningfulRateLimits } from "./rate-limits.js";
 import type {
   AccountStore,
   AccountCredentials,
   RateLimitHistoryEntry,
   RateLimitSnapshot,
-  RotationSettings
-} from './types.js'
-import { sanitizeRotationSettings } from './types.js'
+  RotationSettings,
+} from "./types.js";
+import { sanitizeRotationSettings } from "./types.js";
 
-const STORE_DIR_ENV = 'OPENCODE_ENHANCER_STORE_DIR'
-const STORE_FILE_ENV = 'OPENCODE_ENHANCER_STORE_FILE'
-const LEGACY_STORE_DIR_ENV = 'OPENCODE_MULTI_AUTH_STORE_DIR'
-const LEGACY_STORE_FILE_ENV = 'OPENCODE_MULTI_AUTH_STORE_FILE'
-const LEGACY_DEFAULT_STORE_FILE = 'accounts.json'
-const LEGACY_DEFAULT_STORE_DIR = path.join(
-  os.homedir(),
-  '.config',
-  'opencode-multi-auth'
-)
-const DEFAULT_STORE_DIR = path.join(
-  os.homedir(),
-  '.config',
-  'opencode-enhancer'
-)
-const DEFAULT_STORE_FILE = 'settings.json'
+const STORE_DIR_ENV = "OPENCODE_ENHANCER_STORE_DIR";
+const STORE_FILE_ENV = "OPENCODE_ENHANCER_STORE_FILE";
+const LEGACY_STORE_DIR_ENV = "OPENCODE_MULTI_AUTH_STORE_DIR";
+const LEGACY_STORE_FILE_ENV = "OPENCODE_MULTI_AUTH_STORE_FILE";
+const LEGACY_DEFAULT_STORE_FILE = "accounts.json";
+const LEGACY_DEFAULT_STORE_DIR = path.join(os.homedir(), ".config", "opencode-multi-auth");
+const DEFAULT_STORE_DIR = path.join(os.homedir(), ".config", "opencode-enhancer");
+const DEFAULT_STORE_FILE = "settings.json";
 
-let storeCache: AccountStore | null = null
-let storeCacheDirty = false
-let storeFlushTimer: ReturnType<typeof setTimeout> | null = null
-const STORE_FLUSH_INTERVAL_MS = 2_000
-let storeLocationChecked = false
+let storeCache: AccountStore | null = null;
+let storeCacheDirty = false;
+let storeFlushTimer: ReturnType<typeof setTimeout> | null = null;
+const STORE_FLUSH_INTERVAL_MS = 2_000;
+let storeLocationChecked = false;
 
 function getEnvPath(...keys: string[]): string | null {
   for (const key of keys) {
-    const value = process.env[key]
-    if (value && value.trim()) return path.resolve(value.trim())
+    const value = process.env[key];
+    if (value && value.trim()) return path.resolve(value.trim());
   }
-  return null
+  return null;
 }
 
 function movePathIfMissing(source: string, target: string): void {
-  if (!fs.existsSync(source) || fs.existsSync(target)) return
-  fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 })
-  fs.renameSync(source, target)
+  if (!fs.existsSync(source) || fs.existsSync(target)) return;
+  fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
+  fs.renameSync(source, target);
 }
 
 function migrateStoreArtifacts(
   sourceDir: string,
   sourceFile: string,
   targetDir: string,
-  targetFile: string
+  targetFile: string,
 ): void {
-  for (const suffix of ['', '.bak', '.lkg']) {
+  for (const suffix of ["", ".bak", ".lkg"]) {
     movePathIfMissing(
       path.join(sourceDir, `${sourceFile}${suffix}`),
-      path.join(targetDir, `${targetFile}${suffix}`)
-    )
+      path.join(targetDir, `${targetFile}${suffix}`),
+    );
   }
 }
 
 function migrateLegacyStoreLocation(): void {
-  if (storeLocationChecked) return
-  storeLocationChecked = true
+  if (storeLocationChecked) return;
+  storeLocationChecked = true;
 
-  if (
-    getEnvPath(
-      STORE_DIR_ENV,
-      LEGACY_STORE_DIR_ENV,
-      STORE_FILE_ENV,
-      LEGACY_STORE_FILE_ENV
-    )
-  ) {
-    return
+  if (getEnvPath(STORE_DIR_ENV, LEGACY_STORE_DIR_ENV, STORE_FILE_ENV, LEGACY_STORE_FILE_ENV)) {
+    return;
   }
 
-  if (
-    fs.existsSync(LEGACY_DEFAULT_STORE_DIR) &&
-    !fs.existsSync(DEFAULT_STORE_DIR)
-  ) {
+  if (fs.existsSync(LEGACY_DEFAULT_STORE_DIR) && !fs.existsSync(DEFAULT_STORE_DIR)) {
     try {
-      fs.renameSync(LEGACY_DEFAULT_STORE_DIR, DEFAULT_STORE_DIR)
+      fs.renameSync(LEGACY_DEFAULT_STORE_DIR, DEFAULT_STORE_DIR);
     } catch {
       // Fall back to moving individual store artifacts.
     }
@@ -93,86 +75,86 @@ function migrateLegacyStoreLocation(): void {
     DEFAULT_STORE_DIR,
     LEGACY_DEFAULT_STORE_FILE,
     DEFAULT_STORE_DIR,
-    DEFAULT_STORE_FILE
-  )
+    DEFAULT_STORE_FILE,
+  );
 
-  if (!fs.existsSync(LEGACY_DEFAULT_STORE_DIR)) return
+  if (!fs.existsSync(LEGACY_DEFAULT_STORE_DIR)) return;
 
   migrateStoreArtifacts(
     LEGACY_DEFAULT_STORE_DIR,
     LEGACY_DEFAULT_STORE_FILE,
     DEFAULT_STORE_DIR,
-    DEFAULT_STORE_FILE
-  )
+    DEFAULT_STORE_FILE,
+  );
 }
 
 function getStoreDir(): string {
-  migrateLegacyStoreLocation()
-  const override = getEnvPath(STORE_DIR_ENV, LEGACY_STORE_DIR_ENV)
-  if (override) return override
-  return DEFAULT_STORE_DIR
+  migrateLegacyStoreLocation();
+  const override = getEnvPath(STORE_DIR_ENV, LEGACY_STORE_DIR_ENV);
+  if (override) return override;
+  return DEFAULT_STORE_DIR;
 }
 
 function getStoreFile(): string {
-  migrateLegacyStoreLocation()
-  const override = getEnvPath(STORE_FILE_ENV, LEGACY_STORE_FILE_ENV)
-  if (override) return override
-  return path.join(getStoreDir(), DEFAULT_STORE_FILE)
+  migrateLegacyStoreLocation();
+  const override = getEnvPath(STORE_FILE_ENV, LEGACY_STORE_FILE_ENV);
+  if (override) return override;
+  return path.join(getStoreDir(), DEFAULT_STORE_FILE);
 }
 
-const STORE_ENV_PASSPHRASE = 'OPENCODE_ENHANCER_STORE_PASSPHRASE'
-const LEGACY_STORE_ENV_PASSPHRASE = 'CODEX_SOFT_STORE_PASSPHRASE'
-const CURRENT_STORE_VERSION = 2
+const STORE_ENV_PASSPHRASE = "OPENCODE_ENHANCER_STORE_PASSPHRASE";
+const LEGACY_STORE_ENV_PASSPHRASE = "CODEX_SOFT_STORE_PASSPHRASE";
+const CURRENT_STORE_VERSION = 2;
 
 type EncryptedStoreFile = {
-  encrypted: true
-  version: number
-  salt: string
-  iv: string
-  tag: string
-  data: string
-}
+  encrypted: true;
+  version: number;
+  salt: string;
+  iv: string;
+  tag: string;
+  data: string;
+};
 
 type StoreFileV1 = {
-  accounts: Record<string, AccountCredentials>
-  activeAlias: string | null
-  rotationIndex: number
-  lastRotation: number
-}
+  accounts: Record<string, AccountCredentials>;
+  activeAlias: string | null;
+  rotationIndex: number;
+  lastRotation: number;
+};
 
 type StoreFileV2 = StoreFileV1 & {
-  version: 2
-  forcedAlias?: string | null
-  forcedUntil?: number | null
-  previousRotationStrategy?: string | null
-  forcedBy?: string | null
+  version: 2;
+  forcedAlias?: string | null;
+  forcedUntil?: number | null;
+  previousRotationStrategy?: string | null;
+  forcedBy?: string | null;
   rotationStrategy?:
-    | 'round-robin'
-    | 'least-used'
-    | 'random'
-    | 'weighted-round-robin'
-    | 'usage-priority'
-  settings?: Partial<RotationSettings>
+    | "round-robin"
+    | "least-used"
+    | "random"
+    | "weighted-round-robin"
+    | "usage-priority";
+  settings?: Partial<RotationSettings>;
   force?: {
-    forcedAlias: string | null
-    forcedUntil: number | null
-    previousRotationStrategy: string | null
-    forcedBy: string | null
-  }
-}
+    forcedAlias: string | null;
+    forcedUntil: number | null;
+    previousRotationStrategy: string | null;
+    forcedBy: string | null;
+  };
+};
 
-type AnyStoreFile = StoreFileV1 | StoreFileV2
+type AnyStoreFile = StoreFileV1 | StoreFileV2;
 
-let storeLocked = false
-let lastStoreError: string | null = null
-let lastStoreEncrypted = false
-let writeLock = false
-let writeLockQueue: Array<() => void> = []
+let storeLocked = false;
+let lastStoreError: string | null = null;
+let lastStoreEncrypted = false;
+let writeLock = false;
+let writeLockQueue: Array<() => void> = [];
 
 function ensureDir(): void {
-  const dir = getStoreDir()
+  const dir = getStoreDir();
   if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   }
 }
 
@@ -182,233 +164,176 @@ function emptyStore(): AccountStore {
     accounts: {},
     activeAlias: null,
     rotationIndex: 0,
-    lastRotation: Date.now()
-  }
+    lastRotation: Date.now(),
+  };
 }
 
 function getPassphrase(): string | null {
-  const value =
-    process.env[STORE_ENV_PASSPHRASE] ||
-    process.env[LEGACY_STORE_ENV_PASSPHRASE]
-  return value && value.trim().length > 0 ? value : null
+  const value = process.env[STORE_ENV_PASSPHRASE] || process.env[LEGACY_STORE_ENV_PASSPHRASE];
+  return value && value.trim().length > 0 ? value : null;
 }
 
 function isEncryptedFile(payload: any): payload is EncryptedStoreFile {
-  return Boolean(
-    payload && payload.encrypted === true && typeof payload.data === 'string'
-  )
+  return Boolean(payload && payload.encrypted === true && typeof payload.data === "string");
 }
 
 function deriveKey(passphrase: string, salt: Buffer): Buffer {
-  return crypto.scryptSync(passphrase, salt, 32)
+  return crypto.scryptSync(passphrase, salt, 32);
 }
 
-function encryptStore(
-  store: AccountStore,
-  passphrase: string
-): EncryptedStoreFile {
-  const salt = crypto.randomBytes(16)
-  const iv = crypto.randomBytes(12)
-  const key = deriveKey(passphrase, salt)
-  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv)
-  const serialized = JSON.stringify(store)
-  const encrypted = Buffer.concat([
-    cipher.update(serialized, 'utf8'),
-    cipher.final()
-  ])
-  const tag = cipher.getAuthTag()
+function encryptStore(store: AccountStore, passphrase: string): EncryptedStoreFile {
+  const salt = crypto.randomBytes(16);
+  const iv = crypto.randomBytes(12);
+  const key = deriveKey(passphrase, salt);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const serialized = JSON.stringify(store);
+  const encrypted = Buffer.concat([cipher.update(serialized, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
   return {
     encrypted: true,
     version: CURRENT_STORE_VERSION,
-    salt: salt.toString('base64'),
-    iv: iv.toString('base64'),
-    tag: tag.toString('base64'),
-    data: encrypted.toString('base64')
-  }
+    salt: salt.toString("base64"),
+    iv: iv.toString("base64"),
+    tag: tag.toString("base64"),
+    data: encrypted.toString("base64"),
+  };
 }
 
-function decryptStore(
-  file: EncryptedStoreFile,
-  passphrase: string
-): AccountStore {
-  const salt = Buffer.from(file.salt, 'base64')
-  const iv = Buffer.from(file.iv, 'base64')
-  const tag = Buffer.from(file.tag, 'base64')
-  const data = Buffer.from(file.data, 'base64')
-  const key = deriveKey(passphrase, salt)
-  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv)
-  decipher.setAuthTag(tag)
-  const decrypted = Buffer.concat([
-    decipher.update(data),
-    decipher.final()
-  ]).toString('utf8')
-  return JSON.parse(decrypted) as AccountStore
+function decryptStore(file: EncryptedStoreFile, passphrase: string): AccountStore {
+  const salt = Buffer.from(file.salt, "base64");
+  const iv = Buffer.from(file.iv, "base64");
+  const tag = Buffer.from(file.tag, "base64");
+  const data = Buffer.from(file.data, "base64");
+  const key = deriveKey(passphrase, salt);
+  const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
+  decipher.setAuthTag(tag);
+  const decrypted = Buffer.concat([decipher.update(data), decipher.final()]).toString("utf8");
+  return JSON.parse(decrypted) as AccountStore;
 }
 
 function validateAccount(acc: any, alias: string): AccountCredentials | null {
-  if (!acc || typeof acc !== 'object') return null
-  if (typeof acc.accessToken !== 'string' || !acc.accessToken) return null
-  if (typeof acc.refreshToken !== 'string' || !acc.refreshToken) return null
-  if (typeof acc.expiresAt !== 'number') return null
+  if (!acc || typeof acc !== "object") return null;
+  if (typeof acc.accessToken !== "string" || !acc.accessToken) return null;
+  if (typeof acc.refreshToken !== "string" || !acc.refreshToken) return null;
+  if (typeof acc.expiresAt !== "number") return null;
 
   const rateLimitHistory = Array.isArray(acc.rateLimitHistory)
     ? acc.rateLimitHistory.filter((entry: any) =>
         hasMeaningfulRateLimits({
           fiveHour: entry?.fiveHour,
-          weekly: entry?.weekly
-        })
+          weekly: entry?.weekly,
+        }),
       )
-    : undefined
-  const rateLimits = hasMeaningfulRateLimits(acc.rateLimits)
-    ? acc.rateLimits
-    : undefined
+    : undefined;
+  const rateLimits = hasMeaningfulRateLimits(acc.rateLimits) ? acc.rateLimits : undefined;
 
   return {
     alias,
     accessToken: acc.accessToken,
     refreshToken: acc.refreshToken,
-    idToken: typeof acc.idToken === 'string' ? acc.idToken : undefined,
-    accountId: typeof acc.accountId === 'string' ? acc.accountId : undefined,
-    accountUserId:
-      typeof acc.accountUserId === 'string' ? acc.accountUserId : undefined,
-    userId: typeof acc.userId === 'string' ? acc.userId : undefined,
+    idToken: typeof acc.idToken === "string" ? acc.idToken : undefined,
+    accountId: typeof acc.accountId === "string" ? acc.accountId : undefined,
+    accountUserId: typeof acc.accountUserId === "string" ? acc.accountUserId : undefined,
+    userId: typeof acc.userId === "string" ? acc.userId : undefined,
     expiresAt: acc.expiresAt,
-    email: typeof acc.email === 'string' ? acc.email : undefined,
-    name: typeof acc.name === 'string' ? acc.name : undefined,
-    lastRefresh:
-      typeof acc.lastRefresh === 'string' ? acc.lastRefresh : undefined,
-    lastSeenAt: typeof acc.lastSeenAt === 'number' ? acc.lastSeenAt : undefined,
-    lastActiveUntil:
-      typeof acc.lastActiveUntil === 'number' ? acc.lastActiveUntil : undefined,
-    lastUsed: typeof acc.lastUsed === 'number' ? acc.lastUsed : undefined,
-    usageCount: typeof acc.usageCount === 'number' ? acc.usageCount : 0,
-    rateLimitedUntil:
-      typeof acc.rateLimitedUntil === 'number'
-        ? acc.rateLimitedUntil
-        : undefined,
+    email: typeof acc.email === "string" ? acc.email : undefined,
+    name: typeof acc.name === "string" ? acc.name : undefined,
+    lastRefresh: typeof acc.lastRefresh === "string" ? acc.lastRefresh : undefined,
+    lastSeenAt: typeof acc.lastSeenAt === "number" ? acc.lastSeenAt : undefined,
+    lastActiveUntil: typeof acc.lastActiveUntil === "number" ? acc.lastActiveUntil : undefined,
+    lastUsed: typeof acc.lastUsed === "number" ? acc.lastUsed : undefined,
+    usageCount: typeof acc.usageCount === "number" ? acc.usageCount : 0,
+    rateLimitedUntil: typeof acc.rateLimitedUntil === "number" ? acc.rateLimitedUntil : undefined,
     modelUnsupportedUntil:
-      typeof acc.modelUnsupportedUntil === 'number'
-        ? acc.modelUnsupportedUntil
-        : undefined,
+      typeof acc.modelUnsupportedUntil === "number" ? acc.modelUnsupportedUntil : undefined,
     modelUnsupportedAt:
-      typeof acc.modelUnsupportedAt === 'number'
-        ? acc.modelUnsupportedAt
-        : undefined,
+      typeof acc.modelUnsupportedAt === "number" ? acc.modelUnsupportedAt : undefined,
     modelUnsupportedModel:
-      typeof acc.modelUnsupportedModel === 'string'
-        ? acc.modelUnsupportedModel
-        : undefined,
+      typeof acc.modelUnsupportedModel === "string" ? acc.modelUnsupportedModel : undefined,
     modelUnsupportedError:
-      typeof acc.modelUnsupportedError === 'string'
-        ? acc.modelUnsupportedError
-        : undefined,
+      typeof acc.modelUnsupportedError === "string" ? acc.modelUnsupportedError : undefined,
     workspaceDeactivatedUntil:
-      typeof acc.workspaceDeactivatedUntil === 'number'
-        ? acc.workspaceDeactivatedUntil
-        : undefined,
+      typeof acc.workspaceDeactivatedUntil === "number" ? acc.workspaceDeactivatedUntil : undefined,
     workspaceDeactivatedAt:
-      typeof acc.workspaceDeactivatedAt === 'number'
-        ? acc.workspaceDeactivatedAt
-        : undefined,
+      typeof acc.workspaceDeactivatedAt === "number" ? acc.workspaceDeactivatedAt : undefined,
     workspaceDeactivatedError:
-      typeof acc.workspaceDeactivatedError === 'string'
-        ? acc.workspaceDeactivatedError
-        : undefined,
-    authInvalid:
-      typeof acc.authInvalid === 'boolean' ? acc.authInvalid : undefined,
+      typeof acc.workspaceDeactivatedError === "string" ? acc.workspaceDeactivatedError : undefined,
+    authInvalid: typeof acc.authInvalid === "boolean" ? acc.authInvalid : undefined,
     authInvalidatedAt:
-      typeof acc.authInvalidatedAt === 'number'
-        ? acc.authInvalidatedAt
-        : undefined,
+      typeof acc.authInvalidatedAt === "number" ? acc.authInvalidatedAt : undefined,
     // Phase D: Account availability fields
-    enabled: typeof acc.enabled === 'boolean' ? acc.enabled : undefined,
-    disabledAt: typeof acc.disabledAt === 'number' ? acc.disabledAt : undefined,
-    disabledBy: typeof acc.disabledBy === 'string' ? acc.disabledBy : undefined,
-    disableReason:
-      typeof acc.disableReason === 'string' ? acc.disableReason : undefined,
+    enabled: typeof acc.enabled === "boolean" ? acc.enabled : undefined,
+    disabledAt: typeof acc.disabledAt === "number" ? acc.disabledAt : undefined,
+    disabledBy: typeof acc.disabledBy === "string" ? acc.disabledBy : undefined,
+    disableReason: typeof acc.disableReason === "string" ? acc.disableReason : undefined,
     rateLimits,
     rateLimitHistory:
-      rateLimitHistory && rateLimitHistory.length > 0
-        ? rateLimitHistory
-        : undefined,
-    limitStatus:
-      typeof acc.limitStatus === 'string' ? acc.limitStatus : undefined,
-    limitError: typeof acc.limitError === 'string' ? acc.limitError : undefined,
-    lastLimitProbeAt:
-      typeof acc.lastLimitProbeAt === 'number'
-        ? acc.lastLimitProbeAt
-        : undefined,
-    lastLimitErrorAt:
-      typeof acc.lastLimitErrorAt === 'number'
-        ? acc.lastLimitErrorAt
-        : undefined,
+      rateLimitHistory && rateLimitHistory.length > 0 ? rateLimitHistory : undefined,
+    limitStatus: typeof acc.limitStatus === "string" ? acc.limitStatus : undefined,
+    limitError: typeof acc.limitError === "string" ? acc.limitError : undefined,
+    lastLimitProbeAt: typeof acc.lastLimitProbeAt === "number" ? acc.lastLimitProbeAt : undefined,
+    lastLimitErrorAt: typeof acc.lastLimitErrorAt === "number" ? acc.lastLimitErrorAt : undefined,
     limitsConfidence:
-      acc.limitsConfidence === 'fresh' ||
-      acc.limitsConfidence === 'stale' ||
-      acc.limitsConfidence === 'error' ||
-      acc.limitsConfidence === 'unknown'
+      acc.limitsConfidence === "fresh" ||
+      acc.limitsConfidence === "stale" ||
+      acc.limitsConfidence === "error" ||
+      acc.limitsConfidence === "unknown"
         ? acc.limitsConfidence
         : undefined,
     tags: Array.isArray(acc.tags) ? acc.tags : undefined,
-    notes: typeof acc.notes === 'string' ? acc.notes : undefined,
-    source:
-      acc.source === 'opencode' || acc.source === 'codex'
-        ? acc.source
-        : undefined
-  }
+    notes: typeof acc.notes === "string" ? acc.notes : undefined,
+    source: acc.source === "opencode" || acc.source === "codex" ? acc.source : undefined,
+  };
 }
 
 function validateStore(data: any): AccountStore | null {
-  if (!data || typeof data !== 'object') return null
-  const force = data.force && typeof data.force === 'object' ? data.force : null
+  if (!data || typeof data !== "object") return null;
+  const force = data.force && typeof data.force === "object" ? data.force : null;
 
-  const accounts: Record<string, AccountCredentials> = {}
-  const rawAccounts = data.accounts
-  if (rawAccounts && typeof rawAccounts === 'object') {
+  const accounts: Record<string, AccountCredentials> = {};
+  const rawAccounts = data.accounts;
+  if (rawAccounts && typeof rawAccounts === "object") {
     for (const [alias, acc] of Object.entries(rawAccounts)) {
-      const validated = validateAccount(acc, alias)
+      const validated = validateAccount(acc, alias);
       if (validated) {
-        accounts[alias] = validated
+        accounts[alias] = validated;
       }
     }
   }
 
   return {
-    version: typeof data.version === 'number' ? data.version : undefined,
+    version: typeof data.version === "number" ? data.version : undefined,
     accounts,
-    activeAlias: typeof data.activeAlias === 'string' ? data.activeAlias : null,
-    rotationIndex:
-      typeof data.rotationIndex === 'number' ? data.rotationIndex : 0,
-    lastRotation:
-      typeof data.lastRotation === 'number' ? data.lastRotation : Date.now(),
+    activeAlias: typeof data.activeAlias === "string" ? data.activeAlias : null,
+    rotationIndex: typeof data.rotationIndex === "number" ? data.rotationIndex : 0,
+    lastRotation: typeof data.lastRotation === "number" ? data.lastRotation : Date.now(),
     forcedAlias:
-      typeof data.forcedAlias === 'string'
+      typeof data.forcedAlias === "string"
         ? data.forcedAlias
-        : typeof force?.forcedAlias === 'string'
+        : typeof force?.forcedAlias === "string"
           ? force.forcedAlias
           : null,
     forcedUntil:
-      typeof data.forcedUntil === 'number'
+      typeof data.forcedUntil === "number"
         ? data.forcedUntil
-        : typeof force?.forcedUntil === 'number'
+        : typeof force?.forcedUntil === "number"
           ? force.forcedUntil
           : null,
     previousRotationStrategy:
-      typeof data.previousRotationStrategy === 'string'
+      typeof data.previousRotationStrategy === "string"
         ? data.previousRotationStrategy
-        : typeof force?.previousRotationStrategy === 'string'
+        : typeof force?.previousRotationStrategy === "string"
           ? force.previousRotationStrategy
           : null,
     forcedBy:
-      typeof data.forcedBy === 'string'
+      typeof data.forcedBy === "string"
         ? data.forcedBy
-        : typeof force?.forcedBy === 'string'
+        : typeof force?.forcedBy === "string"
           ? force.forcedBy
           : null,
-    rotationStrategy:
-      data.rotationStrategy ?? data.settings?.rotationStrategy ?? 'usage-priority',
-    settings: sanitizeRotationSettings(data.settings)
-  }
+    rotationStrategy: data.rotationStrategy ?? data.settings?.rotationStrategy ?? "usage-priority",
+    settings: sanitizeRotationSettings(data.settings),
+  };
 }
 
 function migrateV1toV2(data: StoreFileV1): StoreFileV2 {
@@ -419,275 +344,271 @@ function migrateV1toV2(data: StoreFileV1): StoreFileV2 {
     forcedUntil: null,
     previousRotationStrategy: null,
     forcedBy: null,
-    rotationStrategy: 'usage-priority',
+    rotationStrategy: "usage-priority",
     settings: {
-      rotationStrategy: 'usage-priority'
-    }
-  }
+      rotationStrategy: "usage-priority",
+    },
+  };
 }
 
 function migrateStore(data: any): AccountStore | null {
-  if (!data || typeof data !== 'object') return null
+  if (!data || typeof data !== "object") return null;
 
-  const version = typeof data.version === 'number' ? data.version : 1
+  const version = typeof data.version === "number" ? data.version : 1;
 
   if (version > CURRENT_STORE_VERSION) {
     console.warn(
-      `[enhancer] Store version ${version} is newer than supported ${CURRENT_STORE_VERSION}. Proceeding with caution.`
-    )
-    return validateStore(data)
+      `[enhancer] Store version ${version} is newer than supported ${CURRENT_STORE_VERSION}. Proceeding with caution.`,
+    );
+    return validateStore(data);
   }
 
-  let migrated: any = data
+  let migrated: any = data;
   if (version === 1) {
-    migrated = migrateV1toV2(data as StoreFileV1)
-    console.log('[enhancer] Migrated store from v1 to v2')
+    migrated = migrateV1toV2(data as StoreFileV1);
+    console.log("[enhancer] Migrated store from v1 to v2");
   }
 
-  return validateStore(migrated)
+  return validateStore(migrated);
 }
 
 function getLastKnownGoodPath(): string {
-  return `${getStoreFile()}.lkg`
+  return `${getStoreFile()}.lkg`;
 }
 
 function saveLastKnownGood(store: AccountStore): void {
   // Avoid writing plaintext snapshots when store encryption is enabled.
   if (getPassphrase()) {
-    return
+    return;
   }
 
-  const lkgPath = getLastKnownGoodPath()
+  const lkgPath = getLastKnownGoodPath();
   try {
-    fs.writeFileSync(lkgPath, JSON.stringify(store, null, 2), { mode: 0o600 })
+    fs.writeFileSync(lkgPath, JSON.stringify(store, null, 2), { mode: 0o600 });
   } catch {
     // ignore
   }
 }
 
 function loadLastKnownGood(): AccountStore | null {
-  const lkgPath = getLastKnownGoodPath()
-  if (!fs.existsSync(lkgPath)) return null
+  const lkgPath = getLastKnownGoodPath();
+  if (!fs.existsSync(lkgPath)) return null;
   try {
-    const data = fs.readFileSync(lkgPath, 'utf-8')
-    const parsed = JSON.parse(data)
-    return validateStore(parsed)
+    const data = fs.readFileSync(lkgPath, "utf-8");
+    const parsed = JSON.parse(data);
+    return validateStore(parsed);
   } catch {
-    return null
+    return null;
   }
 }
 
 async function acquireWriteLock(): Promise<void> {
   if (!writeLock) {
-    writeLock = true
-    return
+    writeLock = true;
+    return;
   }
   return new Promise((resolve) => {
-    writeLockQueue.push(resolve)
-  })
+    writeLockQueue.push(resolve);
+  });
 }
 
 function releaseWriteLock(): void {
-  const next = writeLockQueue.shift()
+  const next = writeLockQueue.shift();
   if (next) {
-    next()
+    next();
   } else {
-    writeLock = false
+    writeLock = false;
   }
 }
 
 function buildSnapshot(window?: {
-  remaining?: number
-  limit?: number
-  resetAt?: number
+  remaining?: number;
+  limit?: number;
+  resetAt?: number;
 }): RateLimitSnapshot | undefined {
-  if (!window) return undefined
+  if (!window) return undefined;
   return {
     remaining: window.remaining,
     limit: window.limit,
-    resetAt: window.resetAt
-  }
+    resetAt: window.resetAt,
+  };
 }
 
 function buildHistoryEntry(rateLimits?: {
-  fiveHour?: any
-  weekly?: any
+  fiveHour?: any;
+  weekly?: any;
 }): RateLimitHistoryEntry | null {
-  if (!hasMeaningfulRateLimits(rateLimits)) return null
-  const updatedAtValues = [
-    rateLimits?.fiveHour?.updatedAt,
-    rateLimits?.weekly?.updatedAt
-  ].filter((value): value is number => typeof value === 'number')
-  const at =
-    updatedAtValues.length > 0 ? Math.max(...updatedAtValues) : Date.now()
+  if (!hasMeaningfulRateLimits(rateLimits)) return null;
+  const updatedAtValues = [rateLimits?.fiveHour?.updatedAt, rateLimits?.weekly?.updatedAt].filter(
+    (value): value is number => typeof value === "number",
+  );
+  const at = updatedAtValues.length > 0 ? Math.max(...updatedAtValues) : Date.now();
   return {
     at,
     fiveHour: buildSnapshot(rateLimits?.fiveHour),
-    weekly: buildSnapshot(rateLimits?.weekly)
-  }
+    weekly: buildSnapshot(rateLimits?.weekly),
+  };
 }
 
 function appendHistory(
   history: RateLimitHistoryEntry[] | undefined,
-  entry: RateLimitHistoryEntry
+  entry: RateLimitHistoryEntry,
 ): RateLimitHistoryEntry[] {
-  const next = history ? [...history] : []
-  const last = next[next.length - 1]
+  const next = history ? [...history] : [];
+  const last = next[next.length - 1];
   const same =
     last &&
     last.fiveHour?.remaining === entry.fiveHour?.remaining &&
     last.weekly?.remaining === entry.weekly?.remaining &&
     last.fiveHour?.resetAt === entry.fiveHour?.resetAt &&
-    last.weekly?.resetAt === entry.weekly?.resetAt
+    last.weekly?.resetAt === entry.weekly?.resetAt;
   if (!same) {
-    next.push(entry)
+    next.push(entry);
   }
   if (next.length > 160) {
-    return next.slice(next.length - 160)
+    return next.slice(next.length - 160);
   }
-  return next
+  return next;
 }
 
 export function loadStore(): AccountStore {
-  storeLocked = false
-  lastStoreError = null
-  lastStoreEncrypted = false
+  storeLocked = false;
+  lastStoreError = null;
+  lastStoreEncrypted = false;
 
   if (storeCache && !storeLocked) {
-    return storeCache
+    return storeCache;
   }
 
-  ensureDir()
-  const file = getStoreFile()
+  ensureDir();
+  const file = getStoreFile();
   if (fs.existsSync(file)) {
     try {
-      const data = fs.readFileSync(file, 'utf-8')
-      const parsed = JSON.parse(data)
+      const data = fs.readFileSync(file, "utf-8");
+      const parsed = JSON.parse(data);
       if (isEncryptedFile(parsed)) {
-        lastStoreEncrypted = true
-        const passphrase = getPassphrase()
+        lastStoreEncrypted = true;
+        const passphrase = getPassphrase();
         if (!passphrase) {
-          storeLocked = true
-          lastStoreError = `Store is encrypted. Set ${STORE_ENV_PASSPHRASE} to unlock.`
-          return emptyStore()
+          storeLocked = true;
+          lastStoreError = `Store is encrypted. Set ${STORE_ENV_PASSPHRASE} to unlock.`;
+          return emptyStore();
         }
         try {
-          const decrypted = decryptStore(parsed, passphrase)
-          const validated = validateStore(decrypted)
+          const decrypted = decryptStore(parsed, passphrase);
+          const validated = validateStore(decrypted);
           if (validated) {
-            saveLastKnownGood(validated)
-            storeCache = validated
-            return validated
+            saveLastKnownGood(validated);
+            storeCache = validated;
+            return validated;
           }
-          storeLocked = true
-          lastStoreError = 'Store validation failed after decryption.'
-          const lkg = loadLastKnownGood()
+          storeLocked = true;
+          lastStoreError = "Store validation failed after decryption.";
+          const lkg = loadLastKnownGood();
           if (lkg) {
-            console.warn('[enhancer] Restored from last-known-good snapshot')
-            storeCache = lkg
-            return lkg
+            console.warn("[enhancer] Restored from last-known-good snapshot");
+            storeCache = lkg;
+            return lkg;
           }
-          return emptyStore()
+          return emptyStore();
         } catch (err) {
-          storeLocked = true
-          lastStoreError = 'Failed to decrypt store. Check passphrase.'
-          console.error('[enhancer] Failed to decrypt store:', err)
-          return emptyStore()
+          storeLocked = true;
+          lastStoreError = "Failed to decrypt store. Check passphrase.";
+          console.error("[enhancer] Failed to decrypt store:", err);
+          return emptyStore();
         }
       }
 
-      const migrated = migrateStore(parsed)
+      const migrated = migrateStore(parsed);
       if (migrated) {
-        saveLastKnownGood(migrated)
-        storeCache = migrated
-        return migrated
+        saveLastKnownGood(migrated);
+        storeCache = migrated;
+        return migrated;
       }
 
-      storeLocked = true
-      lastStoreError = 'Store validation failed.'
-      console.error('[enhancer] Store validation failed')
+      storeLocked = true;
+      lastStoreError = "Store validation failed.";
+      console.error("[enhancer] Store validation failed");
 
-      const lkg = loadLastKnownGood()
+      const lkg = loadLastKnownGood();
       if (lkg) {
-        console.warn('[enhancer] Restored from last-known-good snapshot')
-        storeCache = lkg
-        return lkg
+        console.warn("[enhancer] Restored from last-known-good snapshot");
+        storeCache = lkg;
+        return lkg;
       }
-      return emptyStore()
+      return emptyStore();
     } catch (err) {
-      storeLocked = true
-      lastStoreError = 'Failed to parse store. Store locked until fixed.'
-      console.error('[enhancer] Failed to parse store:', err)
+      storeLocked = true;
+      lastStoreError = "Failed to parse store. Store locked until fixed.";
+      console.error("[enhancer] Failed to parse store:", err);
 
-      const lkg = loadLastKnownGood()
+      const lkg = loadLastKnownGood();
       if (lkg) {
-        console.warn('[enhancer] Restored from last-known-good snapshot')
-        storeCache = lkg
-        return lkg
+        console.warn("[enhancer] Restored from last-known-good snapshot");
+        storeCache = lkg;
+        return lkg;
       }
     }
   }
-  const empty = emptyStore()
-  storeCache = empty
-  return empty
+  const empty = emptyStore();
+  storeCache = empty;
+  return empty;
 }
 
 export function saveStore(store: AccountStore): void {
-  storeCache = store
-  storeCacheDirty = true
-  scheduleFlush()
+  storeCache = store;
+  storeCacheDirty = true;
+  scheduleFlush();
 }
 
 function scheduleFlush(): void {
-  if (storeFlushTimer) return
+  if (storeFlushTimer) return;
   storeFlushTimer = setTimeout(() => {
-    storeFlushTimer = null
-    flushStoreToDisk()
-  }, STORE_FLUSH_INTERVAL_MS)
+    storeFlushTimer = null;
+    flushStoreToDisk();
+  }, STORE_FLUSH_INTERVAL_MS);
 }
 
 export function flushStoreToDisk(): void {
-  if (!storeCacheDirty || !storeCache) return
-  const store = storeCache
-  storeCacheDirty = false
+  if (!storeCacheDirty || !storeCache) return;
+  const store = storeCache;
+  storeCacheDirty = false;
 
-  ensureDir()
+  ensureDir();
   if (storeLocked) {
-    console.error(
-      '[enhancer] Store locked; refusing to overwrite encrypted file.'
-    )
-    return
+    console.error("[enhancer] Store locked; refusing to overwrite encrypted file.");
+    return;
   }
 
-  const file = getStoreFile()
-  const passphrase = getPassphrase()
-  const payload = passphrase ? encryptStore(store, passphrase) : store
-  const json = JSON.stringify(payload, null, 2)
+  const file = getStoreFile();
+  const passphrase = getPassphrase();
+  const payload = passphrase ? encryptStore(store, passphrase) : store;
+  const json = JSON.stringify(payload, null, 2);
 
   try {
     if (fs.existsSync(file)) {
-      fs.copyFileSync(file, `${file}.bak`)
-      fs.chmodSync(`${file}.bak`, 0o600)
+      fs.copyFileSync(file, `${file}.bak`);
+      fs.chmodSync(`${file}.bak`, 0o600);
     }
   } catch {
     // ignore backup failures
   }
 
-  const tmp = `${file}.tmp-${process.pid}-${Date.now()}`
-  let fd: number | null = null
+  const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
+  let fd: number | null = null;
 
   try {
-    fd = fs.openSync(tmp, 'w', 0o600)
-    fs.writeFileSync(fd, json, { encoding: 'utf-8' })
+    fd = fs.openSync(tmp, "w", 0o600);
+    fs.writeFileSync(fd, json, { encoding: "utf-8" });
     try {
-      fs.fsyncSync(fd)
+      fs.fsyncSync(fd);
     } catch {
       // fsync not supported everywhere; best-effort
     }
   } finally {
     if (fd !== null) {
       try {
-        fs.closeSync(fd)
+        fs.closeSync(fd);
       } catch {
         // ignore
       }
@@ -695,187 +616,211 @@ export function flushStoreToDisk(): void {
   }
 
   try {
-    fs.renameSync(tmp, file)
+    fs.renameSync(tmp, file);
   } catch (err: any) {
-    if (err?.code === 'EPERM' || err?.code === 'EEXIST') {
+    if (err?.code === "EPERM" || err?.code === "EEXIST") {
       try {
-        fs.unlinkSync(file)
+        fs.unlinkSync(file);
       } catch {
         // ignore
       }
-      fs.renameSync(tmp, file)
+      fs.renameSync(tmp, file);
     } else {
       try {
-        fs.unlinkSync(tmp)
+        fs.unlinkSync(tmp);
       } catch {
         // ignore
       }
-      throw err
+      throw err;
     }
   }
 
   try {
-    const dirFd = fs.openSync(getStoreDir(), 'r')
+    const dirFd = fs.openSync(getStoreDir(), "r");
     try {
-      fs.fsyncSync(dirFd)
+      fs.fsyncSync(dirFd);
     } catch {
       // ignore
     }
-    fs.closeSync(dirFd)
+    fs.closeSync(dirFd);
   } catch {
     // ignore
   }
 
   try {
-    fs.chmodSync(file, 0o600)
+    fs.chmodSync(file, 0o600);
   } catch {
     // ignore
   }
 
-  saveLastKnownGood(store)
+  saveLastKnownGood(store);
 }
 
 export async function withWriteLock<T>(fn: () => T): Promise<T> {
-  await acquireWriteLock()
+  await acquireWriteLock();
   try {
-    return fn()
+    return fn();
   } finally {
-    releaseWriteLock()
+    releaseWriteLock();
   }
 }
 
 export function getStoreDiagnostics(): {
-  storeDir: string
-  storeFile: string
-  locked: boolean
-  encrypted: boolean
-  error: string | null
+  storeDir: string;
+  storeFile: string;
+  locked: boolean;
+  encrypted: boolean;
+  error: string | null;
 } {
   return {
     storeDir: getStoreDir(),
     storeFile: getStoreFile(),
     locked: storeLocked,
     encrypted: lastStoreEncrypted,
-    error: lastStoreError
-  }
+    error: lastStoreError,
+  };
 }
 
 export function addAccount(
   alias: string,
-  creds: Omit<AccountCredentials, 'alias' | 'usageCount'>
+  creds: Omit<AccountCredentials, "alias" | "usageCount">,
 ): AccountStore {
-  const store = loadStore()
-  const entry = buildHistoryEntry(creds.rateLimits)
+  const store = loadStore();
+  const entry = buildHistoryEntry(creds.rateLimits);
   store.accounts[alias] = {
     ...creds,
     alias,
     usageCount: 0,
-    rateLimitHistory: entry ? [entry] : creds.rateLimitHistory
-  }
+    rateLimitHistory: entry ? [entry] : creds.rateLimitHistory,
+  };
   if (!store.activeAlias) {
-    store.activeAlias = alias
+    store.activeAlias = alias;
   }
-  saveStore(store)
-  return store
+  saveStore(store);
+  return store;
 }
 
 export function removeAccount(alias: string): AccountStore {
-  const store = loadStore()
-  delete store.accounts[alias]
+  const store = loadStore();
+  delete store.accounts[alias];
   if (store.activeAlias === alias) {
-    const remaining = Object.keys(store.accounts)
-    store.activeAlias = remaining[0] || null
+    const remaining = Object.keys(store.accounts);
+    store.activeAlias = remaining[0] || null;
   }
-  saveStore(store)
-  return store
+  saveStore(store);
+  return store;
 }
 
-export function updateAccount(
-  alias: string,
-  updates: Partial<AccountCredentials>
-): AccountStore {
-  const store = loadStore()
+export function updateAccount(alias: string, updates: Partial<AccountCredentials>): AccountStore {
+  const store = loadStore();
   if (store.accounts[alias]) {
-    const current = store.accounts[alias]
-    const next = { ...current, ...updates }
+    const current = store.accounts[alias];
+    const next = { ...current, ...updates };
     if (updates.rateLimits || next.rateLimits) {
-      const entry = buildHistoryEntry(next.rateLimits)
+      const entry = buildHistoryEntry(next.rateLimits);
       if (entry) {
-        next.rateLimitHistory = appendHistory(current.rateLimitHistory, entry)
+        next.rateLimitHistory = appendHistory(current.rateLimitHistory, entry);
       }
     }
-    store.accounts[alias] = next
-    saveStore(store)
+    store.accounts[alias] = next;
+    saveStore(store);
   }
-  return store
+  return store;
+}
+
+export function promoteSelectedAccount(
+  previousAlias: string,
+  nextAlias: string,
+  now: number = Date.now(),
+): AccountStore {
+  if (previousAlias === nextAlias) {
+    return setActiveAlias(nextAlias);
+  }
+
+  const store = loadStore();
+  const previousAccount = store.accounts[previousAlias];
+  const nextAccount = store.accounts[nextAlias];
+
+  if (!nextAccount) {
+    return store;
+  }
+
+  if (previousAccount) {
+    updateAccount(previousAlias, {
+      usageCount: Math.max(0, (previousAccount.usageCount || 0) - 1),
+    });
+  }
+
+  updateAccount(nextAlias, {
+    usageCount: (nextAccount.usageCount || 0) + 1,
+    lastUsed: now,
+  });
+
+  return setActiveAlias(nextAlias);
 }
 
 export function setActiveAlias(alias: string | null): AccountStore {
-  const store = loadStore()
-  const now = Date.now()
-  const previousAlias = store.activeAlias
+  const store = loadStore();
+  const now = Date.now();
+  const previousAlias = store.activeAlias;
 
   if (alias === null) {
-    store.activeAlias = null
+    store.activeAlias = null;
   } else if (store.accounts[alias]) {
-    if (
-      previousAlias &&
-      previousAlias !== alias &&
-      store.accounts[previousAlias]
-    ) {
+    if (previousAlias && previousAlias !== alias && store.accounts[previousAlias]) {
       store.accounts[previousAlias] = {
         ...store.accounts[previousAlias],
-        lastActiveUntil: now
-      }
+        lastActiveUntil: now,
+      };
     }
 
-    store.activeAlias = alias
+    store.activeAlias = alias;
     store.accounts[alias] = {
       ...store.accounts[alias],
       lastSeenAt: now,
-      lastActiveUntil: undefined
-    }
+      lastActiveUntil: undefined,
+    };
 
-    const aliases = Object.keys(store.accounts)
-    const idx = aliases.indexOf(alias)
+    const aliases = Object.keys(store.accounts);
+    const idx = aliases.indexOf(alias);
     if (idx >= 0) {
-      store.rotationIndex = idx
+      store.rotationIndex = idx;
     }
-    store.lastRotation = now
+    store.lastRotation = now;
   }
-  saveStore(store)
-  return store
+  saveStore(store);
+  return store;
 }
 
 export function getActiveAccount(): AccountCredentials | null {
-  const store = loadStore()
-  if (!store.activeAlias) return null
-  return store.accounts[store.activeAlias] || null
+  const store = loadStore();
+  if (!store.activeAlias) return null;
+  return store.accounts[store.activeAlias] || null;
 }
 
 export function listAccounts(): AccountCredentials[] {
-  const store = loadStore()
-  return Object.values(store.accounts)
+  const store = loadStore();
+  return Object.values(store.accounts);
 }
 
 export function getStorePath(): string {
-  return getStoreFile()
+  return getStoreFile();
 }
 
 export function getStoreStatus(): {
-  locked: boolean
-  encrypted: boolean
-  error: string | null
+  locked: boolean;
+  encrypted: boolean;
+  error: string | null;
 } {
-  const diag = getStoreDiagnostics()
-  return { locked: diag.locked, encrypted: diag.encrypted, error: diag.error }
+  const diag = getStoreDiagnostics();
+  return { locked: diag.locked, encrypted: diag.encrypted, error: diag.error };
 }
 
 export function invalidateStoreCache(): void {
-  storeCache = null
-  storeCacheDirty = false
+  storeCache = null;
+  storeCacheDirty = false;
   if (storeFlushTimer) {
-    clearTimeout(storeFlushTimer)
-    storeFlushTimer = null
+    clearTimeout(storeFlushTimer);
+    storeFlushTimer = null;
   }
 }

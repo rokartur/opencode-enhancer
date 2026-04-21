@@ -2,7 +2,7 @@ import { getStoreDiagnostics, loadStore, saveStore, updateAccount } from "./stor
 import { ensureValidToken } from "./auth.js";
 import { isForceActive, checkAndAutoClearForce, getForceState, clearForce } from "./force-mode.js";
 import { getRuntimeSettings, calculateWeightedSelection } from "./settings.js";
-import { compareAccountsByUsagePriority } from "./account-ranking.js";
+import { compareAccountsByUsagePriority, getMinRemaining } from "./account-ranking.js";
 import type { AccountCredentials, AccountRateLimits, DEFAULT_CONFIG } from "./types.js";
 import { AUTO_SWITCH_THRESHOLD_DEFAULT } from "./types.js";
 
@@ -29,22 +29,6 @@ function readEnv(...keys: string[]): string | undefined {
 
 function isDebugEnabled(): boolean {
   return readEnv("OPENCODE_ENHANCER_DEBUG", "OPENCODE_MULTI_AUTH_DEBUG") === "1";
-}
-
-export function getMinRemaining(rateLimits?: AccountRateLimits): number {
-  const now = Date.now();
-  const windows = [rateLimits?.fiveHour, rateLimits?.weekly];
-  const values: number[] = [];
-  for (const w of windows) {
-    if (typeof w?.remaining !== "number") continue;
-    // If the rate limit window has reset (resetAt is in the past),
-    // the stored remaining value is stale — skip it so the account
-    // is treated as having unknown (Infinity) remaining capacity.
-    if (typeof w.resetAt === "number" && w.resetAt < now) continue;
-    values.push(w.remaining);
-  }
-  if (values.length === 0) return Infinity;
-  return Math.min(...values);
 }
 
 export function selectBestAvailableAccount(
@@ -346,8 +330,11 @@ export async function getNextAccount(
         if (active && sorted.length > 1 && sorted[0] !== active && sorted.includes(active)) {
           const activeAccount = store.accounts[active];
           const activeMinRemaining = getMinRemaining(activeAccount.rateLimits);
-          const switchFloor = 100 - AUTO_SWITCH_THRESHOLD_DEFAULT;
-          if (activeMinRemaining >= switchFloor) {
+          const configuredThreshold = Number.isFinite(config.autoSwitchThreshold)
+            ? Math.max(0, Math.min(100, config.autoSwitchThreshold))
+            : AUTO_SWITCH_THRESHOLD_DEFAULT;
+          const switchFloor = 100 - configuredThreshold;
+          if (activeMinRemaining > switchFloor) {
             const idx = sorted.indexOf(active);
             sorted.splice(idx, 1);
             sorted.unshift(active);

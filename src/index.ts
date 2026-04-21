@@ -2,7 +2,7 @@ import type { Plugin, PluginInput } from "@opencode-ai/plugin";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import { syncAuthFromOpenCode } from "./auth-sync.js";
-import { createAuthorizationFlow, loginAccount, ensureValidToken } from "./auth.js";
+import { createAuthorizationFlow, loginAccount, ensureValidToken, refreshToken } from "./auth.js";
 import {
   extractRateLimitUpdate,
   getBlockingRateLimitResetAt,
@@ -22,7 +22,13 @@ import { compareAccountsByUsagePriority, getUsagePrioritySnapshot } from "./acco
 import { getDefaultModels } from "./models.js";
 import { getForceState, isForceActive } from "./force-mode.js";
 import { getRuntimeSettings, isFeatureEnabled, isNotificationEnabled } from "./settings.js";
-import { listAccounts, updateAccount, loadStore, setActiveAlias } from "./store.js";
+import {
+  listAccounts,
+  updateAccount,
+  loadStore,
+  promoteSelectedAccount,
+  setActiveAlias,
+} from "./store.js";
 import {
   DEFAULT_CONFIG,
   type AccountCredentials,
@@ -62,6 +68,11 @@ function isDebugEnabled(): boolean {
   return readEnv("OPENCODE_ENHANCER_DEBUG", "OPENCODE_MULTI_AUTH_DEBUG") === "1";
 }
 
+function debugLog(message: string): void {
+  if (!isDebugEnabled()) return;
+  console.log(`[enhancer] ${message}`);
+}
+
 function configure(config: Partial<PluginConfig>): void {
   pluginConfig = { ...pluginConfig, ...config };
 }
@@ -90,10 +101,22 @@ function buildAccountSelectOption(account: AccountCredentials): {
   hint: string;
 } {
   const label = account.email?.trim() || account.alias;
+  const now = Date.now();
+  const parts: string[] = [];
+
+  if (account.authInvalid) {
+    parts.push("invalid");
+  } else if (account.expiresAt && account.expiresAt < now) {
+    parts.push("expired");
+  }
+
+  const usageHint = formatAccountUsageSummary(account.rateLimits);
+  if (usageHint) parts.push(usageHint);
+
   return {
     label,
     value: account.alias,
-    hint: formatAccountUsageSummary(account.rateLimits),
+    hint: parts.join(" · "),
   };
 }
 
@@ -290,6 +313,7 @@ const MultiAuthPlugin: Plugin = async ({
   project,
   directory,
 }: PluginInput) => {
+  debugLog("plugin initialized");
   const terminalNotifierPath = (() => {
     const candidates = ["/opt/homebrew/bin/terminal-notifier", "/usr/local/bin/terminal-notifier"];
     for (const c of candidates) {
@@ -970,6 +994,7 @@ const MultiAuthPlugin: Plugin = async ({
        * Loader configures the SDK with multi-account rotation
        */
       async loader(getAuth, provider) {
+        debugLog("auth.loader invoked");
         await syncAuthFromOpenCode(getAuth);
         const accounts = listAccounts();
 
@@ -1078,11 +1103,8 @@ const MultiAuthPlugin: Plugin = async ({
                             `[enhancer] Auto-switching from ${account.alias} (weekly used=${typeof currentWeeklyUsed === "number" ? currentWeeklyUsed.toFixed(1) : "unknown"}%, 5h used=${typeof currentFiveHourUsed === "number" ? currentFiveHourUsed.toFixed(1) : "unknown"}%, weekly remaining=${currentUsageSnapshot.weeklyRemaining ?? "unknown"}%, 5h remaining=${currentUsageSnapshot.fiveHourRemaining ?? "unknown"}%) to ${betterAlias} (weekly remaining=${betterUsageSnapshot.weeklyRemaining ?? "unknown"}%, 5h remaining=${betterUsageSnapshot.fiveHourRemaining ?? "unknown"}%)`,
                           );
                         }
-                        updateAccount(betterAlias, {
-                          usageCount: (betterAccount.usageCount || 0) + 1,
-                          lastUsed: Date.now(),
-                        });
-                        account = betterAccount;
+                        const switchedStore = promoteSelectedAccount(account.alias, betterAlias);
+                        account = switchedStore.accounts[betterAlias] || betterAccount;
                         token = betterToken;
                       }
                     }
@@ -1400,6 +1422,8 @@ const MultiAuthPlugin: Plugin = async ({
         const aliases = Object.keys(store.accounts || {});
         const hasAccounts = aliases.length > 0;
 
+        debugLog(`auth.methods resolved: hasAccounts=${hasAccounts} aliases=${aliases.length}`);
+
         if (hasAccounts) {
           // When accounts already exist, show a select with all accounts.
           // Each account auto-resolves with stored credentials — no browser
@@ -1486,13 +1510,38 @@ const MultiAuthPlugin: Plugin = async ({
                   instructions: `Using stored account: ${account.email || account.alias}`,
                   callback: async () => {
                     setActiveAlias(account.alias);
-                    return {
-                      type: "success" as const,
-                      provider: PROVIDER_ID,
-                      refresh: account.refreshToken,
-                      access: account.accessToken,
-                      expires: account.expiresAt,
-                    };
+
+                    const freshToken = await ensureValidToken(account.alias);
+                    if (freshToken) {
+                      const refreshed = loadStore().accounts[account.alias];
+                      return {
+                        type: "success" as const,
+                        provider: PROVIDER_ID,
+                        refresh: refreshed.refreshToken,
+                        access: freshToken,
+                        expires: refreshed.expiresAt,
+                      };
+                    }
+
+                    debugLog(
+                      `token refresh failed for ${account.alias}, attempting silent re-auth`,
+                    );
+                    try {
+                      const refreshed = await refreshToken(account.alias);
+                      if (refreshed) {
+                        return {
+                          type: "success" as const,
+                          provider: PROVIDER_ID,
+                          refresh: refreshed.refreshToken,
+                          access: refreshed.accessToken,
+                          expires: refreshed.expiresAt,
+                        };
+                      }
+                    } catch {
+                      // refresh threw, fall through
+                    }
+
+                    return { type: "failed" as const };
                   },
                 };
               },
@@ -1608,4 +1657,5 @@ const MultiAuthPlugin: Plugin = async ({
   };
 };
 
+export { MultiAuthPlugin as server };
 export default MultiAuthPlugin;
