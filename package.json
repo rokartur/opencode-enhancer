@@ -12,6 +12,7 @@
     "build": "tsc",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
+    "test": "npm run build && node --test dist/test/*.test.js",
     "notify:smoke": "node ./scripts/notify-osc9-smoke.mjs",
     "release:check": "npm run lint && npm pack --dry-run",
     "update:patch": "npm version patch && git push origin && git push origin --tags",
@@ -25,10 +26,10 @@
     "@opencode-ai/plugin": "^1.0.150"
   },
   "devDependencies": {
-    "@opencode-ai/plugin": "^1.4.3",
-    "@opencode-ai/sdk": "^1.4.3",
-    "@types/node": "^25.5.2",
-    "typescript": "^6.0.2"
+    "@opencode-ai/plugin": "^1.14.19",
+    "@opencode-ai/sdk": "^1.14.19",
+    "@types/node": "^25.6.0",
+    "typescript": "^6.0.3"
   },
   "files": [
     "dist"
