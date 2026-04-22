@@ -6,6 +6,7 @@ import { hasMeaningfulRateLimits } from "./rate-limits.js";
 import type {
   AccountStore,
   AccountCredentials,
+  RemovedAccountIdentity,
   RateLimitHistoryEntry,
   RateLimitSnapshot,
   RotationSettings,
@@ -124,6 +125,7 @@ type StoreFileV1 = {
 
 type StoreFileV2 = StoreFileV1 & {
   version: 2;
+  removedAccounts?: RemovedAccountIdentity[];
   forcedAlias?: string | null;
   forcedUntil?: number | null;
   previousRotationStrategy?: string | null;
@@ -145,6 +147,8 @@ type StoreFileV2 = StoreFileV1 & {
 
 type AnyStoreFile = StoreFileV1 | StoreFileV2;
 
+type AccountIdentity = Pick<AccountCredentials, "accountId" | "accountUserId" | "userId" | "email">;
+
 let storeLocked = false;
 let lastStoreError: string | null = null;
 let lastStoreEncrypted = false;
@@ -162,10 +166,71 @@ function emptyStore(): AccountStore {
   return {
     version: CURRENT_STORE_VERSION,
     accounts: {},
+    removedAccounts: [],
     activeAlias: null,
     rotationIndex: 0,
     lastRotation: Date.now(),
   };
+}
+
+function normalizeIdentityValue(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim();
+  return normalized || undefined;
+}
+
+function normalizeIdentityEmail(value: unknown): string | undefined {
+  const normalized = normalizeIdentityValue(value);
+  return normalized ? normalized.toLowerCase() : undefined;
+}
+
+function buildRemovedAccountIdentity(
+  account: AccountIdentity,
+  removedAt: number = Date.now(),
+): RemovedAccountIdentity | null {
+  const identity: RemovedAccountIdentity = {
+    accountId: normalizeIdentityValue(account.accountId),
+    accountUserId: normalizeIdentityValue(account.accountUserId),
+    userId: normalizeIdentityValue(account.userId),
+    email: normalizeIdentityEmail(account.email),
+    removedAt,
+  };
+
+  if (!identity.accountId && !identity.accountUserId && !identity.userId && !identity.email) {
+    return null;
+  }
+
+  return identity;
+}
+
+function matchesRemovedAccountIdentity(
+  removed: RemovedAccountIdentity,
+  account: AccountIdentity,
+): boolean {
+  const accountId = normalizeIdentityValue(account.accountId);
+  const accountUserId = normalizeIdentityValue(account.accountUserId);
+  const userId = normalizeIdentityValue(account.userId);
+  const email = normalizeIdentityEmail(account.email);
+
+  return Boolean(
+    (removed.accountUserId && accountUserId && removed.accountUserId === accountUserId) ||
+    (removed.userId && userId && removed.userId === userId) ||
+    (removed.accountId && accountId && removed.accountId === accountId) ||
+    (removed.email && email && removed.email === email),
+  );
+}
+
+function validateRemovedAccountIdentity(value: any): RemovedAccountIdentity | null {
+  const identity = buildRemovedAccountIdentity(
+    {
+      accountId: value?.accountId,
+      accountUserId: value?.accountUserId,
+      userId: value?.userId,
+      email: value?.email,
+    },
+    typeof value?.removedAt === "number" ? value.removedAt : Date.now(),
+  );
+  return identity;
 }
 
 function getPassphrase(): string | null {
@@ -301,9 +366,18 @@ function validateStore(data: any): AccountStore | null {
     }
   }
 
+  const removedAccounts = Array.isArray(data.removedAccounts)
+    ? data.removedAccounts
+        .map((entry: any) => validateRemovedAccountIdentity(entry))
+        .filter((entry: RemovedAccountIdentity | null): entry is RemovedAccountIdentity =>
+          Boolean(entry),
+        )
+    : [];
+
   return {
     version: typeof data.version === "number" ? data.version : undefined,
     accounts,
+    removedAccounts,
     activeAlias: typeof data.activeAlias === "string" ? data.activeAlias : null,
     rotationIndex: typeof data.rotationIndex === "number" ? data.rotationIndex : 0,
     lastRotation: typeof data.lastRotation === "number" ? data.lastRotation : Date.now(),
@@ -340,6 +414,7 @@ function migrateV1toV2(data: StoreFileV1): StoreFileV2 {
   return {
     ...data,
     version: 2,
+    removedAccounts: [],
     forcedAlias: null,
     forcedUntil: null,
     previousRotationStrategy: null,
@@ -684,9 +759,15 @@ export function getStoreDiagnostics(): {
 export function addAccount(
   alias: string,
   creds: Omit<AccountCredentials, "alias" | "usageCount">,
+  options?: { clearRemoved?: boolean },
 ): AccountStore {
   const store = loadStore();
   const entry = buildHistoryEntry(creds.rateLimits);
+  if (options?.clearRemoved && store.removedAccounts?.length) {
+    store.removedAccounts = store.removedAccounts.filter(
+      (removed) => !matchesRemovedAccountIdentity(removed, creds),
+    );
+  }
   store.accounts[alias] = {
     ...creds,
     alias,
@@ -702,13 +783,32 @@ export function addAccount(
 
 export function removeAccount(alias: string): AccountStore {
   const store = loadStore();
+  const removed = store.accounts[alias];
+  const removedIdentity = removed ? buildRemovedAccountIdentity(removed) : null;
+
+  if (removedIdentity) {
+    const existingRemoved = store.removedAccounts || [];
+    store.removedAccounts = [
+      ...existingRemoved.filter((entry) => !matchesRemovedAccountIdentity(entry, removedIdentity)),
+      removedIdentity,
+    ];
+  }
+
   delete store.accounts[alias];
   if (store.activeAlias === alias) {
     const remaining = Object.keys(store.accounts);
     store.activeAlias = remaining[0] || null;
   }
   saveStore(store);
+  flushStoreToDisk();
   return store;
+}
+
+export function isRemovedAccount(account: AccountIdentity): boolean {
+  const store = loadStore();
+  return (store.removedAccounts || []).some((removed) =>
+    matchesRemovedAccountIdentity(removed, account),
+  );
 }
 
 export function updateAccount(alias: string, updates: Partial<AccountCredentials>): AccountStore {

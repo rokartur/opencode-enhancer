@@ -48,6 +48,14 @@ export interface AccountCredentials {
   source?: "opencode" | "codex";
 }
 
+export interface RemovedAccountIdentity {
+  accountId?: string;
+  accountUserId?: string;
+  userId?: string;
+  email?: string;
+  removedAt: number;
+}
+
 export interface RateLimitWindow {
   limit?: number;
   remaining?: number;
@@ -116,6 +124,7 @@ export function calculateLimitsConfidence(
 export interface AccountStore {
   version?: number; // Store version for migrations
   accounts: Record<string, AccountCredentials>;
+  removedAccounts?: RemovedAccountIdentity[];
   activeAlias: string | null;
   rotationIndex: number;
   lastRotation: number;
