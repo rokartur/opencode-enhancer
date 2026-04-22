@@ -170,6 +170,7 @@ Additionally, `CODEX_SOFT_LOG_PATH` and `CODEX_SOFT_STORE_PASSPHRASE` are still 
 
 - `OPENCODE_ENHANCER_DEBUG` — verbose debug logs (`1` enables).
 - `OPENCODE_ENHANCER_UPSTREAM_TIMEOUT_MS` — upstream request timeout in ms (default: `120000`).
+- `OPENCODE_ENHANCER_UPSTREAM_STREAM_TIMEOUT_MS` — upstream streaming request timeout in ms (defaults to `OPENCODE_ENHANCER_UPSTREAM_TIMEOUT_MS` when set, otherwise `900000`).
 - `OPENCODE_ENHANCER_TOKEN_FAILURE_COOLDOWN_MS` — cooldown when token refresh fails (default: `60000`).
 - `OPENCODE_ENHANCER_TRUNCATION` — forces request `truncation` when payload does not specify it (`0|false|disabled` means no override).
 - `OPENCODE_ENHANCER_USAGE_BASE_URL` — override usage API base URL (default: `https://chatgpt.com/backend-api`).

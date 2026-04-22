@@ -141,6 +141,7 @@ function evaluateAccountHealth(acc: AccountCredentials, now: number): AccountHea
 
 export async function getNextAccount(
   config: typeof DEFAULT_CONFIG,
+  options?: { excludeAliases?: Iterable<string> },
 ): Promise<RotationResult | null> {
   // Phase E: Check and auto-clear expired/invalid force state
   const autoClear = checkAndAutoClearForce();
@@ -166,6 +167,7 @@ export async function getNextAccount(
   }
 
   const now = Date.now();
+  const excludedAliases = new Set(options?.excludeAliases || []);
 
   // Phase E: If force mode is active, never fall back to another alias.
   if (forceActive && forceState.forcedAlias) {
@@ -222,6 +224,7 @@ export async function getNextAccount(
   }
 
   const availableAliases = aliases.filter((alias) => {
+    if (excludedAliases.has(alias)) return false;
     const health = healthMap.get(alias);
     return health?.isHealthy === true;
   });

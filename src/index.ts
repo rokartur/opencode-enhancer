@@ -68,6 +68,59 @@ function isDebugEnabled(): boolean {
   return readEnv("OPENCODE_ENHANCER_DEBUG", "OPENCODE_MULTI_AUTH_DEBUG") === "1";
 }
 
+function parsePositiveEnvNumber(...keys: string[]): number | undefined {
+  const raw = readEnv(...keys);
+  const parsed = raw ? Number(raw) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function resolveUpstreamTimeoutMs(isStreaming: boolean): number {
+  if (isStreaming) {
+    return (
+      parsePositiveEnvNumber(
+        "OPENCODE_ENHANCER_UPSTREAM_STREAM_TIMEOUT_MS",
+        "OPENCODE_MULTI_AUTH_UPSTREAM_STREAM_TIMEOUT_MS",
+        "OPENCODE_ENHANCER_UPSTREAM_TIMEOUT_MS",
+        "OPENCODE_MULTI_AUTH_UPSTREAM_TIMEOUT_MS",
+      ) || TIMEOUTS.UPSTREAM_STREAM_FETCH_MS
+    );
+  }
+
+  return (
+    parsePositiveEnvNumber(
+      "OPENCODE_ENHANCER_UPSTREAM_TIMEOUT_MS",
+      "OPENCODE_MULTI_AUTH_UPSTREAM_TIMEOUT_MS",
+    ) || TIMEOUTS.UPSTREAM_FETCH_MS
+  );
+}
+
+function isUpstreamTimeoutError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+
+  const err = error as { name?: unknown; code?: unknown; message?: unknown; cause?: unknown };
+  const name = typeof err.name === "string" ? err.name : "";
+  const code = typeof err.code === "string" ? err.code : "";
+  const message = typeof err.message === "string" ? err.message.toLowerCase() : "";
+
+  if (name === "TimeoutError" || name === "AbortError" || code === "ABORT_ERR") {
+    return true;
+  }
+
+  if (
+    message.includes("timed out") ||
+    message.includes("timeout") ||
+    message.includes("aborted due to timeout")
+  ) {
+    return true;
+  }
+
+  if (err.cause && err.cause !== error) {
+    return isUpstreamTimeoutError(err.cause);
+  }
+
+  return false;
+}
+
 function debugLog(message: string): void {
   if (!isDebugEnabled()) return;
   console.log(`[enhancer] ${message}`);
@@ -1036,7 +1089,9 @@ const MultiAuthPlugin: Plugin = async ({
               rotationStrategy: settings.settings.rotationStrategy,
             };
 
-            const rotation = await getNextAccount(effectiveConfig);
+            const rotation = await getNextAccount(effectiveConfig, {
+              excludeAliases: triedAliases,
+            });
 
             if (!rotation) {
               if (forcePinned && forceState.forcedAlias) {
@@ -1199,6 +1254,7 @@ const MultiAuthPlugin: Plugin = async ({
             }
 
             delete payload.reasoning_effort;
+            const upstreamTimeoutMs = resolveUpstreamTimeoutMs(isStreaming);
 
             try {
               const headers = new Headers(init?.headers || {});
@@ -1219,15 +1275,6 @@ const MultiAuthPlugin: Plugin = async ({
               }
 
               headers.set("accept", "text/event-stream");
-
-              const upstreamTimeoutMs = (() => {
-                const raw = readEnv(
-                  "OPENCODE_ENHANCER_UPSTREAM_TIMEOUT_MS",
-                  "OPENCODE_MULTI_AUTH_UPSTREAM_TIMEOUT_MS",
-                );
-                const parsed = raw ? Number(raw) : NaN;
-                return Number.isFinite(parsed) && parsed > 0 ? parsed : TIMEOUTS.UPSTREAM_FETCH_MS;
-              })();
 
               const res = await fetch(url, {
                 method: init?.method || "POST",
@@ -1392,6 +1439,37 @@ const MultiAuthPlugin: Plugin = async ({
 
               return res;
             } catch (err) {
+              if (isUpstreamTimeoutError(err)) {
+                const timeoutError = Errors.requestTimeout(
+                  upstreamTimeoutMs,
+                  Array.from(triedAliases),
+                  {
+                    alias: account.alias,
+                    streaming: isStreaming,
+                    url,
+                  },
+                );
+
+                updateAccount(account.alias, {
+                  limitError: timeoutError.message,
+                  lastLimitErrorAt: Date.now(),
+                });
+
+                if (attempt < maxAttempts) {
+                  if (isDebugEnabled()) {
+                    console.log(
+                      `[enhancer] Upstream timeout on ${account.alias} after ${upstreamTimeoutMs}ms${isStreaming ? " (stream)" : ""}; retrying with another account`,
+                    );
+                  }
+                  continue;
+                }
+
+                return new Response(JSON.stringify({ error: timeoutError }), {
+                  status: 504,
+                  headers: { "Content-Type": "application/json" },
+                });
+              }
+
               return new Response(
                 JSON.stringify({
                   error: { code: "REQUEST_FAILED", message: `[enhancer] Request failed: ${err}` },
