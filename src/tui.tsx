@@ -9,7 +9,7 @@ import {
   syncCodexAuthFile,
 } from "./codex-auth.js";
 import { decodeJwtPayload } from "./jwt.js";
-import { getOAuthCredential } from "./providers/auth.js";
+import { getAuthPath, getOAuthCredential, invalidateAuthCache } from "./providers/auth.js";
 import { updateAccount } from "./store.js";
 
 // ── File paths ──────────────────────────────────────────────────
@@ -318,6 +318,10 @@ function syncActiveAliasFromOpenCodeAuth(): void {
 function resolveCurrentCodexAccount(store: StoreData | null): AccountData | null {
   if (!store) return null;
 
+  if (store.activeAlias && store.accounts[store.activeAlias]) {
+    return store.accounts[store.activeAlias];
+  }
+
   const credential = getOAuthCredential("openai");
   if (credential?.access) {
     const claims = decodeJwtPayload(credential.access);
@@ -331,10 +335,6 @@ function resolveCurrentCodexAccount(store: StoreData | null): AccountData | null
       return false;
     });
     if (matchedAccount) return matchedAccount;
-  }
-
-  if (store.activeAlias && store.accounts[store.activeAlias]) {
-    return store.accounts[store.activeAlias];
   }
 
   return Object.values(store.accounts)[0] || null;
@@ -398,7 +398,7 @@ function resolveCodexUsage(
 
   return createUsageInfo(
     "OpenAI Codex",
-    selectedAccount.email || selectedAccount.label,
+    selectedAccount.label,
     selectedAccount.usage,
     result.fetchedAt,
   );
@@ -424,6 +424,8 @@ function getUsageForProvider(
 
 const tui: TuiPlugin = async (api) => {
   const modelStatePath = `${api.state.path.state}/model.json`;
+  const storePath = getStorePath();
+  const authPath = getAuthPath();
   let currentProvider = resolveCurrentProvider(
     api.state.config as { model?: string },
     readSelectedModel(modelStatePath),
@@ -448,7 +450,8 @@ const tui: TuiPlugin = async (api) => {
     warning: unknown;
     success: unknown;
   }) => {
-    const info = getUsageForProvider(currentProvider.usageProviderId, readStore(), currentResult);
+    const store = readStore();
+    const info = getUsageForProvider(currentProvider.usageProviderId, store, currentResult);
     if (!info) {
       if (loading) {
         return [
@@ -477,6 +480,13 @@ const tui: TuiPlugin = async (api) => {
     if (info.providerLabel) header += ` ${info.providerLabel}`;
     lines.push({ text: header, color: theme.accent });
 
+    if (currentProvider.usageProviderId === "codex") {
+      lines.push({
+        text: `active ${info.accountLabel}`,
+        color: theme.textMuted,
+      });
+    }
+
     for (const window of info.windows) {
       const pct = Math.round(window.utilization);
       const bar = buildBar(pct, 8);
@@ -491,15 +501,19 @@ const tui: TuiPlugin = async (api) => {
       });
     }
 
-    if (info.cacheAge) {
-      lines.push({ text: `updated ${info.cacheAge}`, color: theme.textMuted });
-    }
     return lines;
   };
 
   const renderCurrentState = () => {
     if (!sidebarBox || !currentTheme) return;
     updateUsageBox(sidebarBox, api.renderer, buildLines(currentTheme));
+  };
+
+  const refreshCodexSelection = () => {
+    if (currentProvider.usageProviderId !== "codex") return;
+    invalidateAuthCache();
+    syncActiveAliasFromOpenCodeAuth();
+    renderCurrentState();
   };
 
   const refreshUsage = async () => {
@@ -514,6 +528,7 @@ const tui: TuiPlugin = async (api) => {
     renderCurrentState();
 
     if (currentProvider.usageProviderId === "codex") {
+      invalidateAuthCache();
       syncCodexAuthFile({ setActiveAlias: false, allowAdd: false });
       syncActiveAliasFromOpenCodeAuth();
     }
@@ -558,12 +573,28 @@ const tui: TuiPlugin = async (api) => {
       void refreshUsage();
     });
   }
+  if (existsSync(storePath)) {
+    watchFile(storePath, { interval: 500 }, () => {
+      refreshCodexSelection();
+    });
+  }
+  if (existsSync(authPath)) {
+    watchFile(authPath, { interval: 500 }, () => {
+      refreshCodexSelection();
+    });
+  }
 
   api.lifecycle.onDispose(() => {
     clearInterval(selectedProviderPoll);
     clearInterval(refreshInterval);
     if (existsSync(modelStatePath)) {
       unwatchFile(modelStatePath);
+    }
+    if (existsSync(storePath)) {
+      unwatchFile(storePath);
+    }
+    if (existsSync(authPath)) {
+      unwatchFile(authPath);
     }
   });
   void refreshUsage();
