@@ -23,6 +23,21 @@ Install the OpenCode plugin:
 opencode plugin "opencode-enhancer@latest" --global
 ```
 
+To enable the TUI usage sidebar, also add the plugin to your OpenCode `tui.json`:
+
+```json
+{
+  "$schema": "https://opencode.ai/tui.json",
+  "plugin": ["opencode-enhancer@latest"]
+}
+```
+
+Typical location:
+
+```bash
+~/.config/opencode/tui.json
+```
+
 Install the global CLI:
 
 ```bash
