@@ -154,14 +154,17 @@ function formatAccountUsageSummary(rateLimits?: AccountRateLimits): string {
   return parts.join(" · ");
 }
 
-function buildAccountSelectOption(account: AccountCredentials): {
+export function buildAccountSelectOption(account: AccountCredentials): {
   label: string;
   value: string;
   hint: string;
 } {
-  const label = account.email?.trim() || account.alias;
+  const label = account.alias;
   const now = Date.now();
   const parts: string[] = [];
+  const email = account.email?.trim();
+
+  if (email) parts.push(email);
 
   if (account.authInvalid) {
     parts.push("invalid");
@@ -177,6 +180,37 @@ function buildAccountSelectOption(account: AccountCredentials): {
     value: account.alias,
     hint: parts.join(" · "),
   };
+}
+
+function shouldPreferAccountSelectOption(
+  candidate: AccountCredentials,
+  current: AccountCredentials,
+  activeAlias: string | null,
+): boolean {
+  if (candidate.alias === activeAlias) return true;
+  if (current.alias === activeAlias) return false;
+  return (candidate.lastSeenAt || 0) > (current.lastSeenAt || 0);
+}
+
+export function getUniqueAccountSelectAccounts(
+  accounts: AccountCredentials[],
+  activeAlias: string | null,
+): AccountCredentials[] {
+  const unique: AccountCredentials[] = [];
+
+  for (const account of accounts) {
+    const existingIndex = unique.findIndex((existing) => existing.alias === account.alias);
+    if (existingIndex === -1) {
+      unique.push(account);
+      continue;
+    }
+
+    if (shouldPreferAccountSelectOption(account, unique[existingIndex], activeAlias)) {
+      unique[existingIndex] = account;
+    }
+  }
+
+  return unique;
 }
 
 function extractRequestUrl(input: Request | string | URL): string {
@@ -1504,7 +1538,11 @@ const MultiAuthPlugin: Plugin = async ({
       methods: (() => {
         const store = loadStore();
         const aliases = Object.keys(store.accounts || {});
-        const hasAccounts = aliases.length > 0;
+        const accountOptions = getUniqueAccountSelectAccounts(
+          Object.values(store.accounts || {}),
+          store.activeAlias,
+        );
+        const hasAccounts = accountOptions.length > 0;
 
         debugLog(`auth.methods resolved: hasAccounts=${hasAccounts} aliases=${aliases.length}`);
 
@@ -1524,7 +1562,7 @@ const MultiAuthPlugin: Plugin = async ({
                   message: "Select account",
                   options: [
                     { label: "+ Add new account", value: "__new__" },
-                    ...aliases.map((a) => buildAccountSelectOption(store.accounts[a])),
+                    ...accountOptions.map((account) => buildAccountSelectOption(account)),
                   ],
                 },
               ],
