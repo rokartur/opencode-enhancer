@@ -1,81 +1,86 @@
 {
-  "name": "opencode-enhancer",
-  "version": "1.3.6",
-  "description": "OpenCode enhancer for Codex accounts, usage tracking, plugin updates, and automation",
-  "type": "module",
-  "main": "./dist/server.js",
-  "types": "./dist/server.d.ts",
-  "exports": {
-    ".": {
-      "import": "./dist/server.js",
-      "types": "./dist/server.d.ts"
-    },
-    "./server": {
-      "import": "./dist/server.js",
-      "types": "./dist/server.d.ts"
-    },
-    "./tui": {
-      "import": "./dist/tui.js",
-      "types": "./dist/tui.d.ts"
-    }
-  },
-  "bin": {
-    "opencode-enhancer": "./dist/cli.js"
-  },
-  "scripts": {
-    "build": "tsc",
-    "clean": "rm -rf dist",
-    "lint": "tsc --noEmit",
-    "test": "npm run build && node --test dist/test/*.test.js",
-    "notify:smoke": "node ./scripts/notify-osc9-smoke.mjs",
-    "release:check": "npm run lint && npm pack --dry-run",
-    "update:patch": "npm version patch && git push origin && git push origin --tags",
-    "update:minor": "npm version minor && git push origin && git push origin --tags",
-    "prepack": "npm run build"
-  },
-  "dependencies": {
-    "@openauthjs/openauth": "^0.4.3"
-  },
-  "peerDependencies": {
-    "@opencode-ai/plugin": "^1.0.150",
-    "@opentui/solid": "^0.1.102",
-    "@opentui/core": "^0.1.102"
-  },
-  "devDependencies": {
-    "@opencode-ai/plugin": "^1.14.21",
-    "@opencode-ai/sdk": "^1.14.21",
-    "@opentui/core": "^0.1.102",
-    "@opentui/solid": "^0.1.102",
-    "@types/node": "^25.6.0",
-    "typescript": "^6.0.3"
-  },
-  "files": [
-    "dist"
-  ],
-  "oc-plugin": [
-    "server",
-    "tui"
-  ],
-  "publishConfig": {
-    "access": "public"
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/rokartur/opencode-enhancer"
-  },
-  "homepage": "https://github.com/rokartur/opencode-enhancer#readme",
-  "bugs": {
-    "url": "https://github.com/rokartur/opencode-enhancer/issues"
-  },
-  "keywords": [
-    "opencode",
-    "openai",
-    "codex",
-    "oauth",
-    "usage",
-    "plugins",
-    "automation"
-  ],
-  "author": "rokartur",
-  "license": "MIT"
+	"name": "opencode-enhancer",
+	"version": "1.3.6",
+	"description": "OpenCode enhancer for Codex accounts, usage tracking, plugin updates, and automation",
+	"keywords": [
+		"automation",
+		"codex",
+		"oauth",
+		"openai",
+		"opencode",
+		"plugins",
+		"usage"
+	],
+	"homepage": "https://github.com/rokartur/opencode-enhancer#readme",
+	"bugs": {
+		"url": "https://github.com/rokartur/opencode-enhancer/issues"
+	},
+	"license": "MIT",
+	"author": "rokartur",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/rokartur/opencode-enhancer"
+	},
+	"bin": {
+		"opencode-enhancer": "./dist/cli.js"
+	},
+	"files": [
+		"dist"
+	],
+	"type": "module",
+	"main": "./dist/server.js",
+	"types": "./dist/server.d.ts",
+	"exports": {
+		".": {
+			"import": "./dist/server.js",
+			"types": "./dist/server.d.ts"
+		},
+		"./server": {
+			"import": "./dist/server.js",
+			"types": "./dist/server.d.ts"
+		},
+		"./tui": {
+			"import": "./dist/tui.js",
+			"types": "./dist/tui.d.ts"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"build": "tsc",
+		"clean": "rm -rf dist",
+		"lint": "tsc --noEmit && oxlint .",
+		"lint:fix": "oxlint . --fix",
+		"format": "oxfmt --write .",
+		"format:check": "oxfmt --check .",
+		"test": "npm run build && node --test dist/test/*.test.js",
+		"notify:smoke": "node ./scripts/notify-osc9-smoke.mjs",
+		"release:check": "npm run lint && npm pack --dry-run",
+		"update:patch": "npm version patch && git push origin && git push origin --tags",
+		"update:minor": "npm version minor && git push origin && git push origin --tags",
+		"prepack": "npm run build"
+	},
+	"dependencies": {
+		"@openauthjs/openauth": "^0.4.3"
+	},
+	"devDependencies": {
+		"@opencode-ai/plugin": "^1.14.21",
+		"@opencode-ai/sdk": "^1.14.21",
+		"@opentui/core": "^0.1.102",
+		"@opentui/solid": "^0.1.102",
+		"@types/node": "^25.6.0",
+		"oxfmt": "^0.46.0",
+		"oxlint": "^1.61.0",
+		"typescript": "^6.0.3"
+	},
+	"peerDependencies": {
+		"@opencode-ai/plugin": "^1.0.150",
+		"@opentui/core": "^0.1.102",
+		"@opentui/solid": "^0.1.102"
+	},
+	"oc-plugin": [
+		"server",
+		"tui"
+	]
 }

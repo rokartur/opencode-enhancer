@@ -27,8 +27,8 @@ To enable the TUI usage sidebar, also add the plugin to your OpenCode `tui.json`
 
 ```json
 {
-  "$schema": "https://opencode.ai/tui.json",
-  "plugin": ["opencode-enhancer@latest"]
+	"$schema": "https://opencode.ai/tui.json",
+	"plugin": ["opencode-enhancer@latest"]
 }
 ```
 
@@ -79,8 +79,7 @@ opencode-enhancer usage
 opencode-enhancer plugins update --dry-run
 ```
 
-`add` now behaves like the TUI flow: it always creates a randomized alias suffix.
-If you pass `alias-base`, it is used as the alias prefix, e.g. `work-a1b2c3`.
+`add` now behaves like the TUI flow: it always creates a randomized alias suffix. If you pass `alias-base`, it is used as the alias prefix, e.g. `work-a1b2c3`.
 
 ## Data Locations
 
@@ -116,13 +115,13 @@ Example:
 
 ```json
 {
-  "provider": {
-    "openai": {
-      "enhancer": {
-        "autoSwitchThreshold": 92
-      }
-    }
-  }
+	"provider": {
+		"openai": {
+			"enhancer": {
+				"autoSwitchThreshold": 92
+			}
+		}
+	}
 }
 ```
 
@@ -132,45 +131,45 @@ Enhancer stores runtime settings under top-level `settings`:
 
 ```jsonc
 {
-  "settings": {
-    // rotationStrategy:
-    // - round-robin: cycles through healthy accounts (A -> B -> C -> A...)
-    // - least-used: selects the account with the lowest usageCount (then the longest-unused)
-    // - random: picks an account from the top half of the health ranking
-    // - weighted-round-robin: weighted selection by accountWeights; no weights => fallback to round-robin
-    // - usage-priority: selects the account with the largest remaining quota (weekly first, then 5h)
-    "rotationStrategy": "usage-priority",
+	"settings": {
+		// rotationStrategy:
+		// - round-robin: cycles through healthy accounts (A -> B -> C -> A...)
+		// - least-used: selects the account with the lowest usageCount (then the longest-unused)
+		// - random: picks an account from the top half of the health ranking
+		// - weighted-round-robin: weighted selection by accountWeights; no weights => fallback to round-robin
+		// - usage-priority: selects the account with the largest remaining quota (weekly first, then 5h)
+		"rotationStrategy": "usage-priority",
 
-    // number 0..100 (must be < lowThreshold)
-    "criticalThreshold": 10,
+		// number 0..100 (must be < lowThreshold)
+		"criticalThreshold": 10,
 
-    // number 0..100 (must be > criticalThreshold)
-    "lowThreshold": 30,
+		// number 0..100 (must be > criticalThreshold)
+		"lowThreshold": 30,
 
-    // map { alias: weight }, each weight in (0, 1], sum should be ~1.0
-    "accountWeights": {},
+		// map { alias: weight }, each weight in (0, 1], sum should be ~1.0
+		"accountWeights": {},
 
-    "featureFlags": {
-      // boolean
-      "antigravityEnabled": false,
+		"featureFlags": {
+			// boolean
+			"antigravityEnabled": false,
 
-      // boolean
-      "autoSwitch": true
-    },
+			// boolean
+			"autoSwitch": true,
+		},
 
-    "notifications": {
-      // booleans; controls notifications when the agent
-      // asks for permissions, finishes a task, emits an error, or asks a question
-      "permissionRequest": true,
-      "taskComplete": true,
-      "error": true,
-      "question": true,
+		"notifications": {
+			// booleans; controls notifications when the agent
+			// asks for permissions, finishes a task, emits an error, or asks a question
+			"permissionRequest": true,
+			"taskComplete": true,
+			"error": true,
+			"question": true,
 
-      // boolean; when true, `auto` backend on macOS also mirrors
-      // notifications through the system backend while the terminal is frontmost
-      "whenTerminalActive": false
-    }
-  }
+			// boolean; when true, `auto` backend on macOS also mirrors
+			// notifications through the system backend while the terminal is frontmost
+			"whenTerminalActive": false,
+		},
+	},
 }
 ```
 
@@ -178,8 +177,7 @@ Enhancer stores runtime settings under top-level `settings`:
 
 Primary prefix is `OPENCODE_ENHANCER_*`.
 
-Most variables also accept legacy aliases with `OPENCODE_MULTI_AUTH_*`.
-Additionally, `CODEX_SOFT_LOG_PATH` and `CODEX_SOFT_STORE_PASSPHRASE` are still supported for backward compatibility.
+Most variables also accept legacy aliases with `OPENCODE_MULTI_AUTH_*`. Additionally, `CODEX_SOFT_LOG_PATH` and `CODEX_SOFT_STORE_PASSPHRASE` are still supported for backward compatibility.
 
 #### Core / request behavior
 

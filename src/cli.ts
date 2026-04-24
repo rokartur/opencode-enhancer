@@ -1,237 +1,233 @@
 #!/usr/bin/env node
 
-import { createInterface } from "node:readline/promises";
-import { stdin as input, stdout as output } from "node:process";
-import { loginAccount } from "./auth.js";
-import { removeAccount, listAccounts, getStorePath, loadStore } from "./store.js";
-import { runPluginsUpdateCommand } from "./plugin-updates.js";
-import { runUsageCommand } from "./usage-command.js";
+import { createInterface } from 'node:readline/promises'
+import { stdin as input, stdout as output } from 'node:process'
+import { loginAccount } from './auth.js'
+import { removeAccount, listAccounts, getStorePath, loadStore } from './store.js'
+import { runPluginsUpdateCommand } from './plugin-updates.js'
+import { runUsageCommand } from './usage-command.js'
 
-const args = process.argv.slice(2);
-const command = args[0];
-const alias = args[1];
+const args = process.argv.slice(2)
+const command = args[0]
+const alias = args[1]
 
 function getFlagValue(flag: string): string | undefined {
-  const idx = args.indexOf(flag);
-  if (idx === -1) return undefined;
-  return args[idx + 1];
+	const idx = args.indexOf(flag)
+	if (idx === -1) return undefined
+	return args[idx + 1]
 }
 
 function hasFlag(flag: string): boolean {
-  return args.includes(flag);
+	return args.includes(flag)
 }
 
 function formatAccountUsageHint(account: ReturnType<typeof listAccounts>[number]): string {
-  const parts: string[] = [];
+	const parts: string[] = []
 
-  const fiveHour = account.rateLimits?.fiveHour;
-  if (typeof fiveHour?.remaining === "number") {
-    if (typeof fiveHour.limit === "number" && fiveHour.limit !== 100) {
-      parts.push(`5h ${fiveHour.remaining}/${fiveHour.limit} left`);
-    } else {
-      parts.push(`5h ${fiveHour.remaining}% left`);
-    }
-  }
+	const fiveHour = account.rateLimits?.fiveHour
+	if (typeof fiveHour?.remaining === 'number') {
+		if (typeof fiveHour.limit === 'number' && fiveHour.limit !== 100) {
+			parts.push(`5h ${fiveHour.remaining}/${fiveHour.limit} left`)
+		} else {
+			parts.push(`5h ${fiveHour.remaining}% left`)
+		}
+	}
 
-  const weekly = account.rateLimits?.weekly;
-  if (typeof weekly?.remaining === "number") {
-    if (typeof weekly.limit === "number" && weekly.limit !== 100) {
-      parts.push(`weekly ${weekly.remaining}/${weekly.limit} left`);
-    } else {
-      parts.push(`weekly ${weekly.remaining}% left`);
-    }
-  }
+	const weekly = account.rateLimits?.weekly
+	if (typeof weekly?.remaining === 'number') {
+		if (typeof weekly.limit === 'number' && weekly.limit !== 100) {
+			parts.push(`weekly ${weekly.remaining}/${weekly.limit} left`)
+		} else {
+			parts.push(`weekly ${weekly.remaining}% left`)
+		}
+	}
 
-  return parts.join(" · ");
+	return parts.join(' · ')
 }
 
-function formatAccountOption(
-  account: ReturnType<typeof listAccounts>[number],
-  activeAlias: string | null,
-): string {
-  const primary = account.email?.trim() || account.alias;
-  const secondary = primary === account.alias ? "" : ` (${account.alias})`;
-  const active = account.alias === activeAlias ? " [active]" : "";
-  const usage = formatAccountUsageHint(account);
-  return usage ? `${primary}${secondary}${active} - ${usage}` : `${primary}${secondary}${active}`;
+function formatAccountOption(account: ReturnType<typeof listAccounts>[number], activeAlias: string | null): string {
+	const primary = account.email?.trim() || account.alias
+	const secondary = primary === account.alias ? '' : ` (${account.alias})`
+	const active = account.alias === activeAlias ? ' [active]' : ''
+	const usage = formatAccountUsageHint(account)
+	return usage ? `${primary}${secondary}${active} - ${usage}` : `${primary}${secondary}${active}`
 }
 
 async function selectAccountAliasForRemoval(): Promise<string | null> {
-  const accounts = listAccounts();
-  if (accounts.length === 0) {
-    console.log("No accounts configured.");
-    return null;
-  }
+	const accounts = listAccounts()
+	if (accounts.length === 0) {
+		console.log('No accounts configured.')
+		return null
+	}
 
-  if (!input.isTTY || !output.isTTY) {
-    throw new Error("Interactive account selection requires a TTY.");
-  }
+	if (!input.isTTY || !output.isTTY) {
+		throw new Error('Interactive account selection requires a TTY.')
+	}
 
-  const store = loadStore();
-  console.log("\nSelect account to remove:\n");
-  for (const [index, account] of accounts.entries()) {
-    console.log(`  ${index + 1}. ${formatAccountOption(account, store.activeAlias)}`);
-  }
-  console.log("  0. Cancel\n");
+	const store = loadStore()
+	console.log('\nSelect account to remove:\n')
+	for (const [index, account] of accounts.entries()) {
+		console.log(`  ${index + 1}. ${formatAccountOption(account, store.activeAlias)}`)
+	}
+	console.log('  0. Cancel\n')
 
-  const rl = createInterface({ input, output });
-  try {
-    while (true) {
-      const answer = (await rl.question("Choose account: ")).trim();
-      const choice = Number.parseInt(answer, 10);
+	const rl = createInterface({ input, output })
+	try {
+		while (true) {
+			const answer = (await rl.question('Choose account: ')).trim()
+			const choice = Number.parseInt(answer, 10)
 
-      if (Number.isNaN(choice)) {
-        console.log("Enter a number from the list.");
-        continue;
-      }
+			if (Number.isNaN(choice)) {
+				console.log('Enter a number from the list.')
+				continue
+			}
 
-      if (choice === 0) {
-        console.log("Removal cancelled.");
-        return null;
-      }
+			if (choice === 0) {
+				console.log('Removal cancelled.')
+				return null
+			}
 
-      const selected = accounts[choice - 1];
-      if (selected) {
-        return selected.alias;
-      }
+			const selected = accounts[choice - 1]
+			if (selected) {
+				return selected.alias
+			}
 
-      console.log(`Choose a number between 0 and ${accounts.length}.`);
-    }
-  } finally {
-    rl.close();
-  }
+			console.log(`Choose a number between 0 and ${accounts.length}.`)
+		}
+	} finally {
+		rl.close()
+	}
 }
 
 async function main(): Promise<void> {
-  switch (command) {
-    case "add":
-    case "login": {
-      try {
-        const account = await loginAccount(alias);
-        console.log(`\nAccount "${account.alias}" added successfully!`);
-        console.log(`Email: ${account.email || "unknown"}`);
-      } catch (err) {
-        console.error(`Failed to add account: ${err}`);
-        process.exit(1);
-      }
-      break;
-    }
+	switch (command) {
+		case 'add':
+		case 'login': {
+			try {
+				const account = await loginAccount(alias)
+				console.log(`\nAccount "${account.alias}" added successfully!`)
+				console.log(`Email: ${account.email || 'unknown'}`)
+			} catch (err) {
+				console.error(`Failed to add account: ${err}`)
+				process.exit(1)
+			}
+			break
+		}
 
-    case "remove":
-    case "rm": {
-      if (alias) {
-        console.error("Usage: opencode-enhancer remove");
-        process.exit(1);
-      }
-      try {
-        const selectedAlias = await selectAccountAliasForRemoval();
-        if (!selectedAlias) {
-          break;
-        }
-        removeAccount(selectedAlias);
-        console.log(`Account "${selectedAlias}" removed.`);
-      } catch (err) {
-        console.error(`Failed to remove account: ${err}`);
-        process.exit(1);
-      }
-      break;
-    }
+		case 'remove':
+		case 'rm': {
+			if (alias) {
+				console.error('Usage: opencode-enhancer remove')
+				process.exit(1)
+			}
+			try {
+				const selectedAlias = await selectAccountAliasForRemoval()
+				if (!selectedAlias) {
+					break
+				}
+				removeAccount(selectedAlias)
+				console.log(`Account "${selectedAlias}" removed.`)
+			} catch (err) {
+				console.error(`Failed to remove account: ${err}`)
+				process.exit(1)
+			}
+			break
+		}
 
-    case "list":
-    case "ls": {
-      const accounts = listAccounts();
-      if (accounts.length === 0) {
-        console.log("No accounts configured.");
-        console.log("Add one with: opencode-enhancer add [alias-base]");
-      } else {
-        console.log("\nConfigured accounts:\n");
-        for (const acc of accounts) {
-          console.log(`  ${acc.alias}: ${acc.email || "unknown email"} (uses: ${acc.usageCount})`);
-        }
-        console.log();
-      }
-      break;
-    }
+		case 'list':
+		case 'ls': {
+			const accounts = listAccounts()
+			if (accounts.length === 0) {
+				console.log('No accounts configured.')
+				console.log('Add one with: opencode-enhancer add [alias-base]')
+			} else {
+				console.log('\nConfigured accounts:\n')
+				for (const acc of accounts) {
+					console.log(`  ${acc.alias}: ${acc.email || 'unknown email'} (uses: ${acc.usageCount})`)
+				}
+				console.log()
+			}
+			break
+		}
 
-    case "status": {
-      const store = loadStore();
-      const accounts = Object.values(store.accounts);
-      const strategy =
-        store.settings?.rotationStrategy || store.rotationStrategy || "usage-priority";
+		case 'status': {
+			const store = loadStore()
+			const accounts = Object.values(store.accounts)
+			const strategy = store.settings?.rotationStrategy || store.rotationStrategy || 'usage-priority'
 
-      console.log("\n[enhancer] Account Status\n");
-      console.log(`Strategy: ${strategy}`);
-      console.log(`Accounts: ${accounts.length}`);
-      console.log(`Active: ${store.activeAlias || "none"}\n`);
+			console.log('\n[enhancer] Account Status\n')
+			console.log(`Strategy: ${strategy}`)
+			console.log(`Accounts: ${accounts.length}`)
+			console.log(`Active: ${store.activeAlias || 'none'}\n`)
 
-      if (accounts.length === 0) {
-        console.log("No accounts configured. Run: opencode-enhancer add [alias-base]\n");
-        return;
-      }
+			if (accounts.length === 0) {
+				console.log('No accounts configured. Run: opencode-enhancer add [alias-base]\n')
+				return
+			}
 
-      for (const acc of accounts) {
-        const isActive = acc.alias === store.activeAlias ? " (active)" : "";
-        const isRateLimited =
-          acc.rateLimitedUntil && acc.rateLimitedUntil > Date.now()
-            ? ` [RATE LIMITED until ${new Date(acc.rateLimitedUntil).toLocaleTimeString()}]`
-            : "";
-        const expiry = new Date(acc.expiresAt).toLocaleString();
+			for (const acc of accounts) {
+				const isActive = acc.alias === store.activeAlias ? ' (active)' : ''
+				const isRateLimited =
+					acc.rateLimitedUntil && acc.rateLimitedUntil > Date.now()
+						? ` [RATE LIMITED until ${new Date(acc.rateLimitedUntil).toLocaleTimeString()}]`
+						: ''
+				const expiry = new Date(acc.expiresAt).toLocaleString()
 
-        console.log(`  ${acc.alias}${isActive}${isRateLimited}`);
-        console.log(`    Email: ${acc.email || "unknown"}`);
-        console.log(`    Uses: ${acc.usageCount}`);
-        console.log(`    Token expires: ${expiry}`);
-        console.log();
-      }
-      break;
-    }
+				console.log(`  ${acc.alias}${isActive}${isRateLimited}`)
+				console.log(`    Email: ${acc.email || 'unknown'}`)
+				console.log(`    Uses: ${acc.usageCount}`)
+				console.log(`    Token expires: ${expiry}`)
+				console.log()
+			}
+			break
+		}
 
-    case "path": {
-      console.log(getStorePath());
-      break;
-    }
+		case 'path': {
+			console.log(getStorePath())
+			break
+		}
 
-    case "usage": {
-      const providerArg = getFlagValue("--provider");
-      const jsonFlag = args.includes("--json");
-      const verboseFlag = args.includes("--verbose") || args.includes("-v");
-      const noCacheFlag = args.includes("--no-cache");
-      await runUsageCommand({
-        provider: providerArg || undefined,
-        json: jsonFlag,
-        verbose: verboseFlag,
-        noCache: noCacheFlag,
-      });
-      break;
-    }
+		case 'usage': {
+			const providerArg = getFlagValue('--provider')
+			const jsonFlag = args.includes('--json')
+			const verboseFlag = args.includes('--verbose') || args.includes('-v')
+			const noCacheFlag = args.includes('--no-cache')
+			await runUsageCommand({
+				provider: providerArg || undefined,
+				json: jsonFlag,
+				verbose: verboseFlag,
+				noCache: noCacheFlag,
+			})
+			break
+		}
 
-    case "plugins": {
-      const action = args[1] || "help";
-      if (action !== "update") {
-        console.error(
-          "Usage: opencode-enhancer plugins update [--dry-run] [--include-pinned] [--exclude name1,name2]",
-        );
-        process.exit(1);
-      }
+		case 'plugins': {
+			const action = args[1] || 'help'
+			if (action !== 'update') {
+				console.error(
+					'Usage: opencode-enhancer plugins update [--dry-run] [--include-pinned] [--exclude name1,name2]',
+				)
+				process.exit(1)
+			}
 
-      const exclude = (getFlagValue("--exclude") || "")
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean);
+			const exclude = (getFlagValue('--exclude') || '')
+				.split(',')
+				.map(item => item.trim())
+				.filter(Boolean)
 
-      await runPluginsUpdateCommand({
-        dryRun: hasFlag("--dry-run"),
-        includePinned: hasFlag("--include-pinned"),
-        exclude,
-      });
-      break;
-    }
+			await runPluginsUpdateCommand({
+				dryRun: hasFlag('--dry-run'),
+				includePinned: hasFlag('--include-pinned'),
+				exclude,
+			})
+			break
+		}
 
-    case "help":
-    case "--help":
-    case "-h":
-    default: {
-      console.log(`
+		case 'help':
+		case '--help':
+		case '-h':
+		default: {
+			console.log(`
 opencode-enhancer - OpenCode enhancer for Codex accounts, usage, plugin updates, and automation
 
 Commands:
@@ -266,13 +262,13 @@ Examples:
   opencode-enhancer plugins update --exclude oh-my-openagent
 
 After adding accounts, the plugin auto-rotates between them.
-`);
-      break;
-    }
-  }
+`)
+			break
+		}
+	}
 }
 
-main().catch((err) => {
-  console.error("Fatal error:", err);
-  process.exit(1);
-});
+main().catch(err => {
+	console.error('Fatal error:', err)
+	process.exit(1)
+})

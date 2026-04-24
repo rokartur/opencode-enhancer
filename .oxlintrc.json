@@ -1,0 +1,3 @@
+{
+	"ignorePatterns": ["dist", "node_modules", "test/test-errors.ts"]
+}

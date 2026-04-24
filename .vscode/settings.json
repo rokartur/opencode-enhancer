@@ -1,0 +1,24 @@
+{
+	"npm.packageManager": "bun",
+	"npm.scriptRunner": "bun",
+	"code-runner.clearPreviousOutput": true,
+	"oxc.enable": true,
+	"oxc.typeAware": true,
+	"oxc.lint.run": "onSave",
+	"oxc.configPath": ".oxlintrc.json",
+	"oxc.path.oxlint": "node_modules/.bin/oxlint",
+	"oxc.fmt.configPath": ".oxfmtrc.json",
+	"oxc.path.oxfmt": "node_modules/.bin/oxfmt",
+	"editor.defaultFormatter": "oxc.oxc-vscode",
+	"editor.tabSize": 4,
+	"editor.indentSize": "tabSize",
+	"editor.formatOnSave": true,
+	"editor.formatOnType": false,
+	"editor.formatOnPaste": true,
+	"editor.codeActionsOnSave": {
+		"source.fixAll.oxc": "always"
+	},
+	"editor.formatOnSaveMode": "file",
+	"editor.suggest.insertMode": "replace",
+	"editor.detectIndentation": true
+}

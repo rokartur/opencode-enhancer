@@ -10,86 +10,86 @@ const ENDPOINT = 'https://api.synthetic.new/v2/quotas'
 const AUTH_KEY = 'synthetic'
 
 interface QuotasResponse {
-  subscription: {
-    limit: number
-    requests: number
-    renewsAt: string
-  }
+	subscription: {
+		limit: number
+		requests: number
+		renewsAt: string
+	}
 }
 
 export const syntheticProvider: UsageProvider = {
-  id: 'synthetic',
-  name: 'Synthetic',
-  billingType: 'quotaBased',
+	id: 'synthetic',
+	name: 'Synthetic',
+	billingType: 'quotaBased',
 
-  async isConfigured(): Promise<boolean> {
-    return hasCredential(AUTH_KEY)
-  },
+	async isConfigured(): Promise<boolean> {
+		return hasCredential(AUTH_KEY)
+	},
 
-  async fetchUsage(): Promise<ProviderResult> {
-    const apiKey = getApiKey(AUTH_KEY)
-    if (!apiKey) {
-      return {
-        providerId: this.id,
-        providerName: this.name,
-        billingType: this.billingType,
-        status: 'not_configured',
-        fetchedAt: Date.now(),
-      }
-    }
+	async fetchUsage(): Promise<ProviderResult> {
+		const apiKey = getApiKey(AUTH_KEY)
+		if (!apiKey) {
+			return {
+				providerId: this.id,
+				providerName: this.name,
+				billingType: this.billingType,
+				status: 'not_configured',
+				fetchedAt: Date.now(),
+			}
+		}
 
-    try {
-      const res = await fetchWithTimeout(ENDPOINT, {
-        headers: { Authorization: `Bearer ${apiKey}` },
-      })
+		try {
+			const res = await fetchWithTimeout(ENDPOINT, {
+				headers: { Authorization: `Bearer ${apiKey}` },
+			})
 
-      if (!res.ok) {
-        const text = await res.text().catch(() => '')
-        return {
-          providerId: this.id,
-          providerName: this.name,
-          billingType: this.billingType,
-          status: res.status === 401 || res.status === 403 ? 'auth_expired' : 'error',
-          error: `HTTP ${res.status}: ${text.slice(0, 200)}`,
-          fetchedAt: Date.now(),
-        }
-      }
+			if (!res.ok) {
+				const text = await res.text().catch(() => '')
+				return {
+					providerId: this.id,
+					providerName: this.name,
+					billingType: this.billingType,
+					status: res.status === 401 || res.status === 403 ? 'auth_expired' : 'error',
+					error: `HTTP ${res.status}: ${text.slice(0, 200)}`,
+					fetchedAt: Date.now(),
+				}
+			}
 
-      const json = (await res.json()) as QuotasResponse
-      const { limit, requests, renewsAt } = json.subscription
-      const remaining = limit - requests
-      const utilization = limit > 0 ? (requests / limit) * 100 : 0
-      const resetsAt = renewsAt ? new Date(renewsAt).getTime() : undefined
+			const json = (await res.json()) as QuotasResponse
+			const { limit, requests, renewsAt } = json.subscription
+			const remaining = limit - requests
+			const utilization = limit > 0 ? (requests / limit) * 100 : 0
+			const resetsAt = renewsAt ? new Date(renewsAt).getTime() : undefined
 
-      return {
-        providerId: this.id,
-        providerName: this.name,
-        billingType: this.billingType,
-        status: 'ok',
-        usage: {
-          type: 'quotaBased',
-          utilization,
-          remaining,
-          entitlement: limit,
-          windows: [
-            {
-              utilization,
-              resetsAt,
-              label: 'period',
-            },
-          ],
-        },
-        fetchedAt: Date.now(),
-      }
-    } catch (err) {
-      return {
-        providerId: this.id,
-        providerName: this.name,
-        billingType: this.billingType,
-        status: 'error',
-        error: `${err}`,
-        fetchedAt: Date.now(),
-      }
-    }
-  },
+			return {
+				providerId: this.id,
+				providerName: this.name,
+				billingType: this.billingType,
+				status: 'ok',
+				usage: {
+					type: 'quotaBased',
+					utilization,
+					remaining,
+					entitlement: limit,
+					windows: [
+						{
+							utilization,
+							resetsAt,
+							label: 'period',
+						},
+					],
+				},
+				fetchedAt: Date.now(),
+			}
+		} catch (err) {
+			return {
+				providerId: this.id,
+				providerName: this.name,
+				billingType: this.billingType,
+				status: 'error',
+				error: `${err}`,
+				fetchedAt: Date.now(),
+			}
+		}
+	},
 }
