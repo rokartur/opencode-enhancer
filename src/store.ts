@@ -24,6 +24,7 @@ const DEFAULT_STORE_FILE = "settings.json";
 
 let storeCache: AccountStore | null = null;
 let storeCacheDirty = false;
+let storeCacheFileMtimeMs: number | null = null;
 let storeFlushTimer: ReturnType<typeof setTimeout> | null = null;
 const STORE_FLUSH_INTERVAL_MS = 2_000;
 let storeLocationChecked = false;
@@ -154,6 +155,15 @@ let lastStoreError: string | null = null;
 let lastStoreEncrypted = false;
 let writeLock = false;
 let writeLockQueue: Array<() => void> = [];
+
+function getStoreFileMtimeMs(): number | null {
+  try {
+    const file = getStoreFile();
+    return fs.existsSync(file) ? fs.statSync(file).mtimeMs : null;
+  } catch {
+    return null;
+  }
+}
 
 function ensureDir(): void {
   const dir = getStoreDir();
@@ -551,7 +561,8 @@ export function loadStore(): AccountStore {
   lastStoreError = null;
   lastStoreEncrypted = false;
 
-  if (storeCache && !storeLocked) {
+  const cachedMtimeMs = getStoreFileMtimeMs();
+  if (storeCache && !storeLocked && (storeCacheDirty || storeCacheFileMtimeMs === cachedMtimeMs)) {
     return storeCache;
   }
 
@@ -575,6 +586,7 @@ export function loadStore(): AccountStore {
           if (validated) {
             saveLastKnownGood(validated);
             storeCache = validated;
+            storeCacheFileMtimeMs = getStoreFileMtimeMs();
             return validated;
           }
           storeLocked = true;
@@ -583,6 +595,7 @@ export function loadStore(): AccountStore {
           if (lkg) {
             console.warn("[enhancer] Restored from last-known-good snapshot");
             storeCache = lkg;
+            storeCacheFileMtimeMs = getStoreFileMtimeMs();
             return lkg;
           }
           return emptyStore();
@@ -598,6 +611,7 @@ export function loadStore(): AccountStore {
       if (migrated) {
         saveLastKnownGood(migrated);
         storeCache = migrated;
+        storeCacheFileMtimeMs = getStoreFileMtimeMs();
         return migrated;
       }
 
@@ -609,6 +623,7 @@ export function loadStore(): AccountStore {
       if (lkg) {
         console.warn("[enhancer] Restored from last-known-good snapshot");
         storeCache = lkg;
+        storeCacheFileMtimeMs = getStoreFileMtimeMs();
         return lkg;
       }
       return emptyStore();
@@ -621,12 +636,14 @@ export function loadStore(): AccountStore {
       if (lkg) {
         console.warn("[enhancer] Restored from last-known-good snapshot");
         storeCache = lkg;
+        storeCacheFileMtimeMs = getStoreFileMtimeMs();
         return lkg;
       }
     }
   }
   const empty = emptyStore();
   storeCache = empty;
+  storeCacheFileMtimeMs = null;
   return empty;
 }
 
@@ -634,6 +651,13 @@ export function saveStore(store: AccountStore): void {
   storeCache = store;
   storeCacheDirty = true;
   scheduleFlush();
+}
+
+function loadStoreForWrite(): AccountStore {
+  flushStoreToDisk();
+  storeCache = null;
+  storeCacheDirty = false;
+  return loadStore();
 }
 
 function scheduleFlush(): void {
@@ -728,6 +752,8 @@ export function flushStoreToDisk(): void {
     // ignore
   }
 
+  storeCacheFileMtimeMs = getStoreFileMtimeMs();
+
   saveLastKnownGood(store);
 }
 
@@ -761,7 +787,7 @@ export function addAccount(
   creds: Omit<AccountCredentials, "alias" | "usageCount">,
   options?: { clearRemoved?: boolean },
 ): AccountStore {
-  const store = loadStore();
+  const store = loadStoreForWrite();
   const entry = buildHistoryEntry(creds.rateLimits);
   if (options?.clearRemoved && store.removedAccounts?.length) {
     store.removedAccounts = store.removedAccounts.filter(
@@ -778,11 +804,12 @@ export function addAccount(
     store.activeAlias = alias;
   }
   saveStore(store);
+  flushStoreToDisk();
   return store;
 }
 
 export function removeAccount(alias: string): AccountStore {
-  const store = loadStore();
+  const store = loadStoreForWrite();
   const removed = store.accounts[alias];
   const removedIdentity = removed ? buildRemovedAccountIdentity(removed) : null;
 
@@ -812,7 +839,7 @@ export function isRemovedAccount(account: AccountIdentity): boolean {
 }
 
 export function updateAccount(alias: string, updates: Partial<AccountCredentials>): AccountStore {
-  const store = loadStore();
+  const store = loadStoreForWrite();
   if (store.accounts[alias]) {
     const current = store.accounts[alias];
     const next = { ...current, ...updates };
@@ -824,6 +851,7 @@ export function updateAccount(alias: string, updates: Partial<AccountCredentials
     }
     store.accounts[alias] = next;
     saveStore(store);
+    flushStoreToDisk();
   }
   return store;
 }
@@ -837,7 +865,7 @@ export function promoteSelectedAccount(
     return setActiveAlias(nextAlias);
   }
 
-  const store = loadStore();
+  const store = loadStoreForWrite();
   const previousAccount = store.accounts[previousAlias];
   const nextAccount = store.accounts[nextAlias];
 
@@ -860,7 +888,7 @@ export function promoteSelectedAccount(
 }
 
 export function setActiveAlias(alias: string | null): AccountStore {
-  const store = loadStore();
+  const store = loadStoreForWrite();
   const now = Date.now();
   const previousAlias = store.activeAlias;
 
@@ -889,6 +917,7 @@ export function setActiveAlias(alias: string | null): AccountStore {
     store.lastRotation = now;
   }
   saveStore(store);
+  flushStoreToDisk();
   return store;
 }
 
@@ -919,6 +948,7 @@ export function getStoreStatus(): {
 export function invalidateStoreCache(): void {
   storeCache = null;
   storeCacheDirty = false;
+  storeCacheFileMtimeMs = null;
   if (storeFlushTimer) {
     clearTimeout(storeFlushTimer);
     storeFlushTimer = null;

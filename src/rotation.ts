@@ -1,4 +1,10 @@
-import { getStoreDiagnostics, loadStore, saveStore, updateAccount } from "./store.js";
+import {
+  flushStoreToDisk,
+  getStoreDiagnostics,
+  loadStore,
+  saveStore,
+  updateAccount,
+} from "./store.js";
 import { ensureValidToken } from "./auth.js";
 import { isForceActive, checkAndAutoClearForce, getForceState, clearForce } from "./force-mode.js";
 import { getRuntimeSettings, calculateWeightedSelection } from "./settings.js";
@@ -189,6 +195,7 @@ export async function getNextAccount(
           store.activeAlias = forcedAlias;
           store.lastRotation = now;
           saveStore(store);
+          flushStoreToDisk();
 
           console.log(`[enhancer] Force mode: using ${forcedAlias}`);
           return {
@@ -390,6 +397,7 @@ export async function getNextAccount(
       store.rotationIndex = nextIndex(candidate);
     }
     saveStore(store);
+    flushStoreToDisk();
 
     const currentForceState = getForceState();
     return {

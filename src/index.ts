@@ -126,6 +126,12 @@ function debugLog(message: string): void {
   console.log(`[enhancer] ${message}`);
 }
 
+function logAuthCallbackError(error: unknown): void {
+  console.error(
+    `[enhancer] OAuth callback failed: ${error instanceof Error ? error.stack || error.message : String(error)}`,
+  );
+}
+
 function configure(config: Partial<PluginConfig>): void {
   pluginConfig = { ...pluginConfig, ...config };
 }
@@ -1517,8 +1523,8 @@ const MultiAuthPlugin: Plugin = async ({
                   key: "alias",
                   message: "Select account",
                   options: [
-                    ...aliases.map((a) => buildAccountSelectOption(store.accounts[a])),
                     { label: "+ Add new account", value: "__new__" },
+                    ...aliases.map((a) => buildAccountSelectOption(store.accounts[a])),
                   ],
                 },
               ],
@@ -1543,7 +1549,8 @@ const MultiAuthPlugin: Plugin = async ({
                           access: account.accessToken,
                           expires: account.expiresAt,
                         };
-                      } catch {
+                      } catch (error) {
+                        logAuthCallbackError(error);
                         return { type: "failed" as const };
                       }
                     },
@@ -1572,7 +1579,8 @@ const MultiAuthPlugin: Plugin = async ({
                           access: acc.accessToken,
                           expires: acc.expiresAt,
                         };
-                      } catch {
+                      } catch (error) {
+                        logAuthCallbackError(error);
                         return { type: "failed" as const };
                       }
                     },
@@ -1644,7 +1652,8 @@ const MultiAuthPlugin: Plugin = async ({
                         access: account.accessToken,
                         expires: account.expiresAt,
                       };
-                    } catch {
+                    } catch (error) {
+                      logAuthCallbackError(error);
                       return { type: "failed" as const };
                     }
                   },
@@ -1699,7 +1708,8 @@ const MultiAuthPlugin: Plugin = async ({
                       access: account.accessToken,
                       expires: account.expiresAt,
                     };
-                  } catch {
+                  } catch (error) {
+                    logAuthCallbackError(error);
                     return { type: "failed" as const };
                   }
                 },

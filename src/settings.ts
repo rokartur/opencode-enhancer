@@ -1,4 +1,4 @@
-import { loadStore, saveStore, updateAccount } from "./store.js";
+import { flushStoreToDisk, loadStore, saveStore, updateAccount } from "./store.js";
 import { logInfo, logError } from "./logger.js";
 import {
   DEFAULT_FEATURE_FLAGS,
@@ -194,6 +194,7 @@ export function updateSettings(
   // Keep legacy field in sync for force-mode compatibility.
   store.rotationStrategy = newSettings.rotationStrategy;
   saveStore(store);
+  flushStoreToDisk();
 
   logInfo(`Settings updated by ${actor}: ${JSON.stringify(updates)}`);
   return { success: true, settings: newSettings };
@@ -205,6 +206,7 @@ export function resetSettings(actor: string = "system"): RotationSettings {
   delete (store as any).settings;
   store.rotationStrategy = DEFAULT_ROTATION_SETTINGS.rotationStrategy;
   saveStore(store);
+  flushStoreToDisk();
 
   logInfo(`Settings reset to defaults by ${actor}`);
   return { ...DEFAULT_ROTATION_SETTINGS };

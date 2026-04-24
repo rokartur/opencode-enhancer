@@ -4,7 +4,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { addAccount, invalidateStoreCache, loadStore, removeAccount } from "../store.js";
+import {
+  addAccount,
+  getStorePath,
+  invalidateStoreCache,
+  loadStore,
+  removeAccount,
+  updateAccount,
+} from "../store.js";
 
 function makeTempDir(prefix: string): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -116,6 +123,54 @@ test("removeAccount persists a tombstone and flushes it immediately", () => {
     assert.equal(store.removedAccounts?.[0].accountUserId, "acct-user-removed");
     assert.equal(store.removedAccounts?.[0].userId, "user-removed");
     assert.equal(store.removedAccounts?.[0].email, "removed@example.com");
+  });
+});
+
+test("addAccount flushes the new account immediately", () => {
+  withTempStore(() => {
+    addTrackedAccount("new-account");
+    invalidateStoreCache();
+
+    const store = loadStore();
+    assert.deepEqual(Object.keys(store.accounts), ["new-account"]);
+  });
+});
+
+test("updateAccount preserves accounts added by another store writer", () => {
+  withTempStore(() => {
+    addTrackedAccount("first");
+    const staleStore = loadStore();
+    const externalAccount = {
+      accessToken: "external-access-token",
+      refreshToken: "external-refresh-token",
+      expiresAt: Date.now() + 60 * 60 * 1000,
+      alias: "external",
+      usageCount: 0,
+      email: "external@example.com",
+    };
+
+    fs.writeFileSync(
+      getStorePath(),
+      JSON.stringify(
+        {
+          ...staleStore,
+          accounts: {
+            ...staleStore.accounts,
+            external: externalAccount,
+          },
+        },
+        null,
+        2,
+      ),
+      { mode: 0o600 },
+    );
+
+    updateAccount("first", { notes: "updated" });
+    invalidateStoreCache();
+
+    const store = loadStore();
+    assert.deepEqual(Object.keys(store.accounts).sort(), ["external", "first"]);
+    assert.equal(store.accounts.first.notes, "updated");
   });
 });
 

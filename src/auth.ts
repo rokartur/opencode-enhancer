@@ -217,6 +217,7 @@ export async function loginAccount(
         const accountId = getAccountIdFromClaims(idClaims) || getAccountIdFromClaims(accessClaims);
 
         const resolvedAlias = buildGeneratedAlias({ preferredAlias: alias, email });
+        const beforeCount = Object.keys(loadStore().accounts).length;
 
         const store = addAccount(
           resolvedAlias,
@@ -238,6 +239,12 @@ export async function loginAccount(
         );
 
         const account = store.accounts[resolvedAlias];
+        const afterCount = Object.keys(loadStore().accounts).length;
+        if (!account || afterCount <= beforeCount) {
+          throw new Error(
+            `Account add did not persist: before=${beforeCount}, after=${afterCount}, alias=${resolvedAlias}`,
+          );
+        }
 
         res.writeHead(200, { "Content-Type": "text/html" });
         res.end(`
