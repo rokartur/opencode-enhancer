@@ -31,7 +31,11 @@ function isDebugEnabled(): boolean {
 	return readEnv('OPENCODE_ENHANCER_DEBUG', 'OPENCODE_MULTI_AUTH_DEBUG') === '1'
 }
 
-export function selectBestAvailableAccount(excludeAlias?: string, threshold?: number): string | null {
+export function selectBestAvailableAccount(
+	excludeAlias?: string,
+	threshold?: number,
+	requestedModel?: string,
+): string | null {
 	const store = loadStore()
 	const now = Date.now()
 	const aliases = Object.keys(store.accounts)
@@ -40,7 +44,7 @@ export function selectBestAvailableAccount(excludeAlias?: string, threshold?: nu
 		const acc = store.accounts[alias]
 		if (excludeAlias && alias === excludeAlias) return false
 		if (acc.rateLimitedUntil && acc.rateLimitedUntil > now) return false
-		if (acc.modelUnsupportedUntil && acc.modelUnsupportedUntil > now) return false
+		if (isModelUnsupportedFor(acc, now, requestedModel)) return false
 		if (acc.workspaceDeactivatedUntil && acc.workspaceDeactivatedUntil > now) return false
 		if (acc.authInvalid) return false
 		if (acc.enabled === false) return false
@@ -51,7 +55,7 @@ export function selectBestAvailableAccount(excludeAlias?: string, threshold?: nu
 
 	const healthMap = new Map<string, AccountHealth>()
 	for (const alias of eligible) {
-		healthMap.set(alias, evaluateAccountHealth(store.accounts[alias], now))
+		healthMap.set(alias, evaluateAccountHealth(store.accounts[alias], now, requestedModel))
 	}
 
 	eligible.sort((a, b) => {
@@ -87,7 +91,17 @@ interface AccountHealth {
 	priority: number
 }
 
-function evaluateAccountHealth(acc: AccountCredentials, now: number): AccountHealth {
+// `modelUnsupportedUntil` is set per-model: only blocks rotation when the
+// requested model matches the recorded `modelUnsupportedModel`. If the request
+// model is unknown, fall back to the conservative legacy behavior (block).
+function isModelUnsupportedFor(acc: AccountCredentials, now: number, requestedModel?: string): boolean {
+	if (!acc.modelUnsupportedUntil || acc.modelUnsupportedUntil <= now) return false
+	if (!requestedModel) return true
+	if (!acc.modelUnsupportedModel) return true
+	return acc.modelUnsupportedModel === requestedModel
+}
+
+function evaluateAccountHealth(acc: AccountCredentials, now: number, requestedModel?: string): AccountHealth {
 	const wasRateLimited: boolean = !!(acc.rateLimitedUntil && acc.rateLimitedUntil > now - HEALTH_HYSTERESIS_MS)
 	const wasModelUnsupported: boolean = !!(
 		acc.modelUnsupportedUntil && acc.modelUnsupportedUntil > now - HEALTH_HYSTERESIS_MS
@@ -101,7 +115,7 @@ function evaluateAccountHealth(acc: AccountCredentials, now: number): AccountHea
 
 	const currentlyBlocked: boolean =
 		!!(acc.rateLimitedUntil && acc.rateLimitedUntil > now) ||
-		!!(acc.modelUnsupportedUntil && acc.modelUnsupportedUntil > now) ||
+		isModelUnsupportedFor(acc, now, requestedModel) ||
 		!!(acc.workspaceDeactivatedUntil && acc.workspaceDeactivatedUntil > now) ||
 		!!acc.authInvalid ||
 		isDisabled // Phase D: Exclude disabled accounts
@@ -136,7 +150,7 @@ function evaluateAccountHealth(acc: AccountCredentials, now: number): AccountHea
 
 export async function getNextAccount(
 	config: typeof DEFAULT_CONFIG,
-	options?: { excludeAliases?: Iterable<string> },
+	options?: { excludeAliases?: Iterable<string>; requestedModel?: string },
 ): Promise<RotationResult | null> {
 	// Phase E: Check and auto-clear expired/invalid force state
 	const autoClear = checkAndAutoClearForce()
@@ -163,6 +177,7 @@ export async function getNextAccount(
 
 	const now = Date.now()
 	const excludedAliases = new Set(options?.excludeAliases || [])
+	const requestedModel = options?.requestedModel
 
 	// Phase E: If force mode is active, never fall back to another alias.
 	if (forceActive && forceState.forcedAlias) {
@@ -170,7 +185,7 @@ export async function getNextAccount(
 		const forcedAccount = store.accounts[forcedAlias]
 
 		if (forcedAccount) {
-			const health = evaluateAccountHealth(forcedAccount, now)
+			const health = evaluateAccountHealth(forcedAccount, now, requestedModel)
 
 			if (health.isHealthy) {
 				const token = await ensureValidToken(forcedAlias)
@@ -214,7 +229,7 @@ export async function getNextAccount(
 	const healthMap = new Map<string, AccountHealth>()
 	for (const alias of aliases) {
 		const acc = store.accounts[alias]
-		healthMap.set(alias, evaluateAccountHealth(acc, now))
+		healthMap.set(alias, evaluateAccountHealth(acc, now, requestedModel))
 	}
 
 	const availableAliases = aliases.filter(alias => {

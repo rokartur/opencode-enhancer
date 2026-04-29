@@ -1029,14 +1029,29 @@ const MultiAuthPlugin: Plugin = async ({ client, $, serverUrl, project, director
 				const customFetch = async (input: Request | string | URL, init?: RequestInit): Promise<Response> => {
 					await syncAuthFromOpenCode(getAuth)
 
+					// Extract requested model up-front so rotation can apply per-model
+					// `modelUnsupportedUntil` filtering (a previous unsupported-model
+					// failure must not block accounts for *other* models).
+					let parsedRequestBody: Record<string, any> = {}
+					try {
+						parsedRequestBody = init?.body ? JSON.parse(init.body as string) : {}
+					} catch {
+						parsedRequestBody = {}
+					}
+					const requestedModel = normalizeModel(parsedRequestBody.model)
+
 					const store = loadStore()
 					const forceState = getForceState()
 					const forcePinned = isForceActive() && !!forceState.forcedAlias
 					const eligibleCount = Object.values(store.accounts).filter(acc => {
 						const now = Date.now()
+						const modelBlocked =
+							!!acc.modelUnsupportedUntil &&
+							acc.modelUnsupportedUntil > now &&
+							(!acc.modelUnsupportedModel || acc.modelUnsupportedModel === requestedModel)
 						return (
 							(!acc.rateLimitedUntil || acc.rateLimitedUntil < now) &&
-							(!acc.modelUnsupportedUntil || acc.modelUnsupportedUntil < now) &&
+							!modelBlocked &&
 							(!acc.workspaceDeactivatedUntil || acc.workspaceDeactivatedUntil < now) &&
 							!acc.authInvalid &&
 							acc.enabled !== false
@@ -1058,6 +1073,7 @@ const MultiAuthPlugin: Plugin = async ({ client, $, serverUrl, project, director
 
 						const rotation = await getNextAccount(effectiveConfig, {
 							excludeAliases: triedAliases,
+							requestedModel,
 						})
 
 						if (!rotation) {
@@ -1112,7 +1128,7 @@ const MultiAuthPlugin: Plugin = async ({ client, $, serverUrl, project, director
 										currentFiveHourUsed >= autoSwitchUsedTrigger))
 
 							if (shouldAutoSwitchByUsage) {
-								const betterAlias = selectBestAvailableAccount(account.alias)
+								const betterAlias = selectBestAvailableAccount(account.alias, undefined, requestedModel)
 								if (betterAlias) {
 									const betterToken = await ensureValidToken(betterAlias)
 									if (betterToken) {
