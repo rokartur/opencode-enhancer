@@ -38,10 +38,6 @@
 		"./server": {
 			"import": "./dist/server.js",
 			"types": "./dist/server.d.ts"
-		},
-		"./tui": {
-			"import": "./dist/tui.js",
-			"types": "./dist/tui.d.ts"
 		}
 	},
 	"publishConfig": {
@@ -65,22 +61,17 @@
 		"@openauthjs/openauth": "^0.4.3"
 	},
 	"devDependencies": {
-		"@opencode-ai/plugin": "^1.14.21",
-		"@opencode-ai/sdk": "^1.14.21",
-		"@opentui/core": "^0.1.102",
-		"@opentui/solid": "^0.1.102",
+		"@opencode-ai/plugin": "^1.14.29",
+		"@opencode-ai/sdk": "^1.14.29",
 		"@types/node": "^25.6.0",
-		"oxfmt": "^0.46.0",
-		"oxlint": "^1.61.0",
+		"oxfmt": "^0.47.0",
+		"oxlint": "^1.62.0",
 		"typescript": "^6.0.3"
 	},
 	"peerDependencies": {
-		"@opencode-ai/plugin": "^1.0.150",
-		"@opentui/core": "^0.1.102",
-		"@opentui/solid": "^0.1.102"
+		"@opencode-ai/plugin": "^1.0.150"
 	},
 	"oc-plugin": [
-		"server",
-		"tui"
+		"server"
 	]
 }

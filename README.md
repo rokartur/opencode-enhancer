@@ -23,21 +23,6 @@ Install the OpenCode plugin:
 opencode plugin "opencode-enhancer@latest" --global
 ```
 
-To enable the TUI usage sidebar, also add the plugin to your OpenCode `tui.json`:
-
-```json
-{
-	"$schema": "https://opencode.ai/tui.json",
-	"plugin": ["opencode-enhancer@latest"]
-}
-```
-
-Typical location:
-
-```bash
-~/.config/opencode/tui.json
-```
-
 Install the global CLI:
 
 ```bash
@@ -79,7 +64,7 @@ opencode-enhancer usage
 opencode-enhancer plugins update --dry-run
 ```
 
-`add` now behaves like the TUI flow: it always creates a randomized alias suffix. If you pass `alias-base`, it is used as the alias prefix, e.g. `work-a1b2c3`.
+`add` always creates a randomized alias suffix. If you pass `alias-base`, it is used as the alias prefix, e.g. `work-a1b2c3`.
 
 ## Data Locations
 

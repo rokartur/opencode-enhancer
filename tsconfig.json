@@ -14,10 +14,8 @@
 		"declaration": true,
 		"declarationMap": true,
 		"sourceMap": true,
-		"types": ["node"],
-		"jsx": "react-jsx",
-		"jsxImportSource": "solid-js"
+		"types": ["node"]
 	},
-	"include": ["src/**/*.ts", "src/**/*.tsx"],
+	"include": ["src/**/*.ts"],
 	"exclude": ["node_modules", "dist"]
 }
