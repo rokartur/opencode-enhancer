@@ -188,7 +188,7 @@ function updateUsageBox(
 		: never,
 	lines: Array<{ text: string; color: unknown }>,
 ) {
-	for (const child of [...box.getChildren()]) {
+	for (const child of box.getChildren().slice()) {
 		box.remove(child.id)
 	}
 
@@ -532,9 +532,10 @@ const tui: TuiPlugin = async api => {
 			currentResult = null
 			currentError = error instanceof Error ? error.message : String(error)
 		} finally {
-			if (token !== refreshToken) return
-			loading = false
-			renderCurrentState()
+			if (token === refreshToken) {
+				loading = false
+				renderCurrentState()
+			}
 		}
 	}
 
@@ -588,7 +589,7 @@ const tui: TuiPlugin = async api => {
 	api.slots.register({
 		order: 50,
 		slots: {
-			sidebar_content(ctx, props) {
+			sidebar_content(ctx, _props) {
 				currentTheme = ctx.theme.current
 				if (!sidebarBox) {
 					sidebarBox = createUsageBox(api.renderer)

@@ -3,7 +3,7 @@ import { ensureValidToken } from './auth.js'
 import { isForceActive, checkAndAutoClearForce, getForceState, clearForce } from './force-mode.js'
 import { getRuntimeSettings, calculateWeightedSelection } from './settings.js'
 import { compareAccountsByUsagePriority, getMinRemaining } from './account-ranking.js'
-import type { AccountCredentials, AccountRateLimits, DEFAULT_CONFIG } from './types.js'
+import type { AccountCredentials, DEFAULT_CONFIG } from './types.js'
 import { AUTO_SWITCH_THRESHOLD_DEFAULT } from './types.js'
 
 export interface RotationResult {
@@ -110,7 +110,6 @@ function evaluateAccountHealth(acc: AccountCredentials, now: number, requestedMo
 		acc.workspaceDeactivatedUntil && acc.workspaceDeactivatedUntil > now - HEALTH_HYSTERESIS_MS
 	)
 
-	// Phase D: Check if account is disabled
 	const isDisabled: boolean = acc.enabled === false
 
 	const currentlyBlocked: boolean =
@@ -118,7 +117,7 @@ function evaluateAccountHealth(acc: AccountCredentials, now: number, requestedMo
 		isModelUnsupportedFor(acc, now, requestedModel) ||
 		!!(acc.workspaceDeactivatedUntil && acc.workspaceDeactivatedUntil > now) ||
 		!!acc.authInvalid ||
-		isDisabled // Phase D: Exclude disabled accounts
+		isDisabled
 
 	const isInProbation: boolean =
 		!currentlyBlocked && (wasRateLimited || wasModelUnsupported || wasWorkspaceDeactivated)
@@ -136,7 +135,6 @@ function evaluateAccountHealth(acc: AccountCredentials, now: number, requestedMo
 	if (recentFailures > 0) priority -= recentFailures * 10
 	if (acc.usageCount === 0) priority -= 5
 	if (currentlyBlocked) priority = 0
-	// Phase D: Disabled accounts get lowest priority
 	if (isDisabled) priority = -1
 
 	return {
@@ -152,13 +150,12 @@ export async function getNextAccount(
 	config: typeof DEFAULT_CONFIG,
 	options?: { excludeAliases?: Iterable<string>; requestedModel?: string },
 ): Promise<RotationResult | null> {
-	// Phase E: Check and auto-clear expired/invalid force state
+	// Auto-clear expired or invalid force state before normal rotation.
 	const autoClear = checkAndAutoClearForce()
 	if (autoClear.wasCleared) {
 		console.log(`[enhancer] Force mode auto-cleared: ${autoClear.reason}`)
 	}
 
-	// Phase E: Check if force mode is active
 	const forceActive = isForceActive()
 	const forceState = getForceState()
 
@@ -179,7 +176,7 @@ export async function getNextAccount(
 	const excludedAliases = new Set(options?.excludeAliases || [])
 	const requestedModel = options?.requestedModel
 
-	// Phase E: If force mode is active, never fall back to another alias.
+	// If force mode is active, never fall back to another alias.
 	if (forceActive && forceState.forcedAlias) {
 		const forcedAlias = forceState.forcedAlias
 		const forcedAccount = store.accounts[forcedAlias]

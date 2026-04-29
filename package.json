@@ -56,7 +56,7 @@
 		"format:check": "oxfmt --check .",
 		"test": "npm run build && node --test dist/test/*.test.js",
 		"notify:smoke": "node ./scripts/notify-osc9-smoke.mjs",
-		"release:check": "npm run lint && npm pack --dry-run",
+		"release:check": "npm run lint && npm run test && npm pack --dry-run",
 		"update:patch": "npm version patch && git push origin && git push origin --tags",
 		"update:minor": "npm version minor && git push origin && git push origin --tags",
 		"prepack": "npm run build"

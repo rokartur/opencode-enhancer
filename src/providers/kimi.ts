@@ -74,7 +74,7 @@ export const kimiProvider: UsageProvider = {
 
 			// Primary usage window
 			if (json.usage) {
-				const { limit, used, remaining, resetTime } = json.usage
+				const { limit, used, resetTime } = json.usage
 				const utilization = limit > 0 ? (used / limit) * 100 : 0
 				windows.push({
 					utilization,

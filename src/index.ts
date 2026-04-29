@@ -24,13 +24,11 @@ import { getForceState, isForceActive } from './force-mode.js'
 import { getRuntimeSettings, isFeatureEnabled, isNotificationEnabled } from './settings.js'
 import { listAccounts, updateAccount, loadStore, promoteSelectedAccount, setActiveAlias } from './store.js'
 import { DEFAULT_CONFIG, type AccountCredentials, type AccountRateLimits, type PluginConfig } from './types.js'
-import { Errors, type DeterministicError } from './errors.js'
+import { Errors } from './errors.js'
 import { decodeJwtPayload } from './jwt.js'
 import {
 	PROVIDER_ID,
 	CODEX_BASE_URL,
-	REDIRECT_PORT,
-	REDIRECT_URI,
 	URL_PATHS,
 	OPENAI_HEADERS,
 	OPENAI_HEADER_VALUES,
@@ -198,10 +196,6 @@ function extractRequestUrl(input: Request | string | URL): string {
 	return input.url
 }
 
-function rewriteUrlForCodex(url: string): string {
-	return url.replace(URL_PATHS.RESPONSES, URL_PATHS.CODEX_RESPONSES)
-}
-
 function extractPathAndSearch(url: string): string {
 	// OpenCode sometimes passes relative paths (e.g. "/chat/completions") or even
 	// malformed strings when provider base_url is missing (e.g. "undefined/...").
@@ -240,7 +234,7 @@ function filterInput(input: unknown): unknown {
 		.filter(item => item?.type !== 'item_reference')
 		.map(item => {
 			if (item && typeof item === 'object' && 'id' in item) {
-				const { id, ...rest } = item as Record<string, unknown>
+				const { id: _id, ...rest } = item as Record<string, unknown>
 				return rest
 			}
 			return item
@@ -410,8 +404,12 @@ const MultiAuthPlugin: Plugin = async ({ client, $, serverUrl, project, director
 	const lastRetryAttemptBySession = new Map<string, number>()
 
 	const sanitizeOscText = (value: string): string => {
-		return String(value || '')
-			.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ')
+		return Array.from(String(value || ''))
+			.map(char => {
+				const code = char.codePointAt(0) || 0
+				return code <= 0x1f || (code >= 0x7f && code <= 0x9f) ? ' ' : char
+			})
+			.join('')
 			.replace(/\s+/g, ' ')
 			.trim()
 	}
@@ -1016,7 +1014,7 @@ const MultiAuthPlugin: Plugin = async ({ client, $, serverUrl, project, director
 			/**
 			 * Loader configures the SDK with multi-account rotation
 			 */
-			async loader(getAuth, provider) {
+			async loader(getAuth, _provider) {
 				debugLog('auth.loader invoked')
 				await syncAuthFromOpenCode(getAuth)
 				const accounts = listAccounts()
@@ -1189,7 +1187,7 @@ const MultiAuthPlugin: Plugin = async ({ client, $, serverUrl, project, director
 
 						const isStreaming = body?.stream === true
 						const normalizedModel = normalizeModel(body.model)
-						const fastMode = /-fast$/.test(body.model || '')
+						const fastMode = (body.model || '').endsWith('-fast')
 						const supportedFastMode =
 							fastMode && (normalizedModel === 'gpt-5.5' || normalizedModel === 'gpt-5.4')
 						const reasoningMatch = body.model?.match(/-(none|low|medium|high|xhigh)$/)

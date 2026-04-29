@@ -8,6 +8,7 @@ import { fetchWithTimeout } from './types.js'
 import type { ProviderResult, UsageProvider, UsageWindow } from './types.js'
 
 const USAGE_ENDPOINT = 'https://api.anthropic.com/api/oauth/usage'
+const PROFILE_ENDPOINT = 'https://api.anthropic.com/api/oauth/profile'
 const AUTH_KEY = 'anthropic'
 
 interface UsageWindowResponse {
@@ -26,6 +27,43 @@ interface ClaudeUsageResponse {
 		used_credits: number
 		utilization: number
 	}
+}
+
+interface ClaudeProfileResponse {
+	account?: {
+		has_claude_max?: boolean
+		has_claude_pro?: boolean
+	}
+	organization?: {
+		organization_type?: string
+		seat_tier?: string | null
+	}
+}
+
+function getHeaders(token: string): Record<string, string> {
+	return {
+		Authorization: `Bearer ${token}`,
+		'User-Agent': 'claude-code/2.1.80',
+		'anthropic-beta': 'oauth-2025-04-20',
+		Accept: 'application/json',
+	}
+}
+
+function formatPlan(value: string): string {
+	return value
+		.replace(/^claude_/, '')
+		.split(/[_\s-]+/)
+		.filter(Boolean)
+		.map(part => part.charAt(0).toUpperCase() + part.slice(1))
+		.join(' ')
+}
+
+function getPlan(profile: ClaudeProfileResponse): string | undefined {
+	if (profile.account?.has_claude_max) return 'Max'
+	if (profile.account?.has_claude_pro) return 'Pro'
+	if (profile.organization?.seat_tier) return formatPlan(profile.organization.seat_tier)
+	if (profile.organization?.organization_type) return formatPlan(profile.organization.organization_type)
+	return undefined
 }
 
 export const claudeProvider: UsageProvider = {
@@ -50,13 +88,9 @@ export const claudeProvider: UsageProvider = {
 		}
 
 		try {
+			const headers = getHeaders(token)
 			const res = await fetchWithTimeout(USAGE_ENDPOINT, {
-				headers: {
-					Authorization: `Bearer ${token}`,
-					'User-Agent': 'claude-code/2.1.80',
-					'anthropic-beta': 'oauth-2025-04-20',
-					Accept: 'application/json',
-				},
+				headers,
 			})
 
 			if (!res.ok) {
@@ -71,7 +105,14 @@ export const claudeProvider: UsageProvider = {
 				}
 			}
 
-			const json = (await res.json()) as ClaudeUsageResponse
+			const [json, profile] = await Promise.all([
+				res.json() as Promise<ClaudeUsageResponse>,
+				fetchWithTimeout(PROFILE_ENDPOINT, { headers })
+					.then(profileRes =>
+						profileRes.ok ? (profileRes.json() as Promise<ClaudeProfileResponse>) : undefined,
+					)
+					.catch(() => undefined),
+			])
 			const windows: UsageWindow[] = []
 
 			if (json.five_hour) {
@@ -110,6 +151,7 @@ export const claudeProvider: UsageProvider = {
 				providerId: this.id,
 				providerName: this.name,
 				billingType: this.billingType,
+				plan: profile ? getPlan(profile) : undefined,
 				status: 'ok',
 				usage: {
 					type: 'quotaBased',

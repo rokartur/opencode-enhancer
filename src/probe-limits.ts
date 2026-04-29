@@ -18,12 +18,12 @@ export interface ProbeResult {
 	rateLimits?: AccountRateLimits
 	eventTs?: number
 	sourceFile?: string
-	// Phase C: Add probe source diagnostics
+	// Probe source diagnostics
 	probeModel?: string
 	probeEffort?: string
 	probeDurationMs?: number
 	error?: string
-	// Phase C: Track if probe was authoritative (successful completion)
+	// Authoritative only when probe command completes successfully.
 	isAuthoritative?: boolean
 }
 
@@ -216,14 +216,14 @@ export function shouldRetryWithFallback(error?: string): boolean {
 		text.includes('model is not supported') ||
 		text.includes('requested model') ||
 		text.includes('does not exist') ||
-		// Phase C: Handle reasoning.effort and unsupported_value errors
+		// Retry unsupported model/reasoning errors with fallback models or effort.
 		text.includes('unsupported_value') ||
 		text.includes('reasoning.effort') ||
 		text.includes('reasoning effort')
 	)
 }
 
-// Phase C: Get probe effort from environment or default to 'low'
+// Probe effort defaults to low unless overridden by environment.
 export function getProbeEffort(): string {
 	const envEffort = process.env.OPENCODE_ENHANCER_PROBE_EFFORT || process.env.OPENCODE_MULTI_AUTH_PROBE_EFFORT
 	if (envEffort && ['low', 'medium', 'high'].includes(envEffort.toLowerCase())) {
@@ -257,7 +257,7 @@ async function runCodexExec(
 		if (model) {
 			args.push('-m', model)
 		}
-		// Phase C: Add reasoning effort configuration
+		// Include reasoning effort configuration when provided.
 		if (effort) {
 			args.push('-c', `model_reasoning_effort="${effort}"`)
 		}
@@ -322,7 +322,6 @@ export async function probeRateLimitsForAccount(account: AccountCredentials): Pr
 		const probeModel = probeModels[idx]
 		const startedAt = Date.now()
 
-		// Phase C: Pass effort config and track duration
 		const execResult = await runCodexExec(codexHome, probeModel, probeEffort)
 		syncAccountTokensFromProbeHome(account.alias, codexHome)
 		const latest = findLatestSessionRateLimits({
@@ -330,7 +329,7 @@ export async function probeRateLimitsForAccount(account: AccountCredentials): Pr
 			sinceMs: startedAt - 5_000,
 		})
 
-		// Phase C: Only accept authoritative data from successful completions
+		// Only accept authoritative data from successful completions.
 		if (execResult.ok && latest?.rateLimits) {
 			return {
 				rateLimits: latest.rateLimits,
@@ -351,7 +350,7 @@ export async function probeRateLimitsForAccount(account: AccountCredentials): Pr
 		const hasNext = idx < probeModels.length - 1
 		if (!hasNext) break
 
-		// Phase C: Retry with fallback on unsupported_value / reasoning.effort errors
+		// Retry unsupported model/reasoning errors with low effort before next model.
 		if (shouldRetryWithFallback(execResult.error)) {
 			// Try with 'low' effort explicitly if current effort failed
 			if (probeEffort !== 'low' && execResult.error?.toLowerCase().includes('reasoning')) {

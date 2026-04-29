@@ -1,4 +1,4 @@
-import { flushStoreToDisk, loadStore, saveStore, updateAccount } from './store.js'
+import { flushStoreToDisk, loadStore, saveStore } from './store.js'
 import type { AccountStore } from './types.js'
 
 export interface ForceState {

@@ -1,8 +1,12 @@
 import fs from 'node:fs'
 
 function sanitizeOscText(value) {
-	return String(value || '')
-		.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ')
+	return Array.from(String(value || ''))
+		.map(char => {
+			const code = char.codePointAt(0) || 0
+			return code <= 0x1f || (code >= 0x7f && code <= 0x9f) ? ' ' : char
+		})
+		.join('')
 		.replace(/\s+/g, ' ')
 		.trim()
 }

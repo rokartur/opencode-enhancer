@@ -30,7 +30,7 @@ export interface AccountCredentials {
 	workspaceDeactivatedError?: string
 	authInvalid?: boolean
 	authInvalidatedAt?: number
-	// Phase D: Account availability fields
+	// Account availability fields
 	enabled?: boolean // Defaults to true if not set
 	disabledAt?: number
 	disabledBy?: string
@@ -41,7 +41,7 @@ export interface AccountCredentials {
 	limitError?: string
 	lastLimitProbeAt?: number
 	lastLimitErrorAt?: number
-	// Phase C: Freshness/confidence state
+	// Freshness/confidence state
 	limitsConfidence?: LimitsConfidence
 	tags?: string[]
 	notes?: string
@@ -82,14 +82,14 @@ export interface RateLimitHistoryEntry {
 
 export type LimitStatus = 'idle' | 'queued' | 'running' | 'success' | 'error' | 'stopped'
 
-// Phase C: Freshness/confidence state for limits data
+// Freshness/confidence state for limits data.
 export type LimitsConfidence = 'fresh' | 'stale' | 'error' | 'unknown'
 
-// Phase C: Calculate limits confidence based on probe timestamps
+// Calculate limits confidence based on probe timestamps.
 export function calculateLimitsConfidence(
 	lastProbeAt: number | undefined,
 	lastErrorAt: number | undefined,
-	limitStatus: LimitStatus | undefined,
+	_limitStatus: LimitStatus | undefined,
 ): LimitsConfidence {
 	const now = Date.now()
 	const FRESH_THRESHOLD_MS = 5 * 60 * 1000 // 5 minutes
@@ -128,13 +128,13 @@ export interface AccountStore {
 	activeAlias: string | null
 	rotationIndex: number
 	lastRotation: number
-	// Phase E: Force mode fields
+	// Force mode fields
 	forcedAlias?: string | null
 	forcedUntil?: number | null
 	previousRotationStrategy?: string | null
 	forcedBy?: string | null
 	rotationStrategy?: 'round-robin' | 'least-used' | 'random' | 'weighted-round-robin' | 'usage-priority'
-	// Phase F: Settings
+	// Settings
 	settings?: Partial<RotationSettings>
 }
 
@@ -202,7 +202,7 @@ export const DEFAULT_CONFIG: PluginConfig = {
 	autoSwitchThreshold: AUTO_SWITCH_THRESHOLD_DEFAULT,
 }
 
-// Phase F: Settings model for weighted rotation and thresholds
+// Settings model for weighted rotation and thresholds.
 export interface RotationSettings {
 	// Rotation strategy
 	rotationStrategy: 'round-robin' | 'least-used' | 'random' | 'weighted-round-robin' | 'usage-priority'
@@ -214,7 +214,7 @@ export interface RotationSettings {
 	// Account weights for weighted rotation (0-1, sum should be 1)
 	accountWeights: Record<string, number>
 
-	// Phase G: Feature flags
+	// Feature flags
 	featureFlags?: FeatureFlags
 
 	// Native notification toggles
@@ -225,7 +225,7 @@ export interface RotationSettings {
 	updatedBy?: string
 }
 
-// Phase G: Feature flags for non-core functionality
+// Feature flags for non-core functionality.
 export interface FeatureFlags {
 	// Antigravity integration (default: false)
 	antigravityEnabled: boolean
@@ -241,7 +241,7 @@ export interface NotificationSettings {
 	whenTerminalActive: boolean
 }
 
-// Phase G: Default feature flags
+// Default feature flags.
 export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
 	antigravityEnabled: false,
 	autoSwitch: true,
@@ -255,7 +255,7 @@ export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
 	whenTerminalActive: false,
 }
 
-// Phase F: Weighted rotation presets
+// Weighted rotation presets.
 export type WeightPreset = 'balanced' | 'conservative' | 'aggressive' | 'usage-first' | 'custom'
 
 export interface WeightedPresetConfig {
@@ -268,7 +268,7 @@ export interface WeightedPresetConfig {
 	}
 }
 
-// Phase F: Default settings
+// Default settings.
 export const DEFAULT_ROTATION_SETTINGS: RotationSettings = {
 	rotationStrategy: 'usage-priority',
 	criticalThreshold: 10,
@@ -353,7 +353,7 @@ export function sanitizeRotationSettings(input: unknown): Partial<RotationSettin
 	return settings
 }
 
-// Phase F: Preset configurations
+// Preset configurations.
 export const WEIGHTED_PRESETS: Record<WeightPreset, WeightedPresetConfig> = {
 	balanced: {
 		name: 'balanced',
@@ -387,7 +387,7 @@ export const WEIGHTED_PRESETS: Record<WeightPreset, WeightedPresetConfig> = {
 	},
 }
 
-// Phase F: Settings validation
+// Settings validation.
 export interface SettingsValidationError {
 	field: string
 	message: string

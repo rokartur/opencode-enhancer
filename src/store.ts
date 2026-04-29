@@ -126,8 +126,6 @@ type StoreFileV2 = StoreFileV1 & {
 	}
 }
 
-type AnyStoreFile = StoreFileV1 | StoreFileV2
-
 type AccountIdentity = Pick<AccountCredentials, 'accountId' | 'accountUserId' | 'userId' | 'email'>
 
 let storeLocked = false
@@ -307,7 +305,6 @@ function validateAccount(acc: any, alias: string): AccountCredentials | null {
 			typeof acc.workspaceDeactivatedError === 'string' ? acc.workspaceDeactivatedError : undefined,
 		authInvalid: typeof acc.authInvalid === 'boolean' ? acc.authInvalid : undefined,
 		authInvalidatedAt: typeof acc.authInvalidatedAt === 'number' ? acc.authInvalidatedAt : undefined,
-		// Phase D: Account availability fields
 		enabled: typeof acc.enabled === 'boolean' ? acc.enabled : undefined,
 		disabledAt: typeof acc.disabledAt === 'number' ? acc.disabledAt : undefined,
 		disabledBy: typeof acc.disabledBy === 'string' ? acc.disabledBy : undefined,

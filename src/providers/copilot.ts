@@ -299,9 +299,6 @@ export const copilotProvider: UsageProvider = {
 					Object.values(
 						Object.fromEntries(Object.entries(snapshots).filter(([k]) => k.includes('premium'))),
 					)[0]
-				const chat = snapshots.chat
-				const completions = snapshots.completions
-
 				if (premium) {
 					// Premium interactions is the authoritative quota for individual pro plans
 					const normalizedPremium = normalizeQuotaSnapshot(premium, quotaResetsAt, copilotData)

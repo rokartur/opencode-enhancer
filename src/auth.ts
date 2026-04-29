@@ -110,7 +110,7 @@ export async function loginAccount(
 	let server: http.Server | null = null
 	const timeoutMs = Math.max(30_000, options?.timeoutMs ?? 5 * 60 * 1000)
 
-	return new Promise(async (resolve, reject) => {
+	return new Promise((resolve, reject) => {
 		let finished = false
 		let timeout: NodeJS.Timeout | null = null
 
@@ -256,27 +256,29 @@ export async function loginAccount(
 			}
 		})
 
-		try {
-			const actualPort = await findAvailablePort(server, ports)
+		void (async () => {
+			try {
+				const actualPort = await findAvailablePort(server, ports)
 
-			if (!activeFlow || activeFlow.port !== actualPort) {
-				activeFlow = await createAuthorizationFlow(actualPort)
+				if (!activeFlow || activeFlow.port !== actualPort) {
+					activeFlow = await createAuthorizationFlow(actualPort)
+				}
+
+				console.log(`\n[enhancer] Login for ${alias ? `alias base "${alias}"` : 'a new account'}`)
+				console.log(`[enhancer] Open this URL in your browser:\n`)
+				console.log(`  ${activeFlow.url}\n`)
+				console.log(`[enhancer] Waiting for callback on port ${actualPort}...`)
+			} catch (err) {
+				finish(() => reject(err))
+				return
 			}
 
-			console.log(`\n[enhancer] Login for ${alias ? `alias base "${alias}"` : 'a new account'}`)
-			console.log(`[enhancer] Open this URL in your browser:\n`)
-			console.log(`  ${activeFlow.url}\n`)
-			console.log(`[enhancer] Waiting for callback on port ${actualPort}...`)
-		} catch (err) {
-			finish(() => reject(err))
-			return
-		}
-
-		timeout = setTimeout(() => {
-			finish(() =>
-				reject(new Error(`Login timeout after ${Math.round(timeoutMs / 1000)}s - no callback received`)),
-			)
-		}, timeoutMs)
+			timeout = setTimeout(() => {
+				finish(() =>
+					reject(new Error(`Login timeout after ${Math.round(timeoutMs / 1000)}s - no callback received`)),
+				)
+			}, timeoutMs)
+		})()
 	})
 }
 

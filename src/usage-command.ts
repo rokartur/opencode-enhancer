@@ -1,7 +1,7 @@
 // CLI usage command: formatted table output for provider usage
 
 import { fetchAllUsage, allProviders } from './providers/index.js'
-import type { ProviderResult, ProviderAccountResult, ProviderUsage, UsageWindow } from './providers/types.js'
+import type { ProviderResult, ProviderUsage, UsageWindow } from './providers/types.js'
 import { decodeJwtPayload } from './jwt.js'
 import { loadStore, updateAccount } from './store.js'
 import type { AccountCredentials } from './types.js'
@@ -56,15 +56,29 @@ function utilizationColor(pct: number): string {
 	return c.green
 }
 
-function buildBar(pct: number, width = 8): string {
-	const filled = Math.round((pct / 100) * width)
-	const empty = width - filled
-	const color = utilizationColor(pct)
-	return `${color}${'█'.repeat(filled)}${c.dim}${'░'.repeat(empty)}${c.reset}`
+function remainingColor(pct: number): string {
+	if (pct <= 20) return c.red
+	if (pct <= 50) return c.yellow
+	return c.green
+}
+
+function parsePercent(value: string): number | undefined {
+	const match = value.trim().match(/^(-?\d+(?:\.\d+)?)%$/)
+	return match ? Number(match[1]) : undefined
+}
+
+function usedMetricColor(value: string): string {
+	const pct = parsePercent(value)
+	return pct === undefined ? c.red : utilizationColor(pct)
+}
+
+function leftMetricColor(value: string): string {
+	const pct = parsePercent(value)
+	return pct === undefined ? c.green : remainingColor(pct)
 }
 
 function stripAnsi(str: string): string {
-	return str.replace(/\x1b\[[0-9;]*m/g, '')
+	return str.replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g'), '')
 }
 
 function visibleLength(str: string): number {
@@ -91,18 +105,11 @@ function padLeft(str: string, len: number): string {
 	return ' '.repeat(pad) + str
 }
 
-interface TableLayout {
-	providerWidth: number
-	usageWidth: number
-	planWidth: number
-}
-
 interface SummaryTableLayout {
 	providerWidth: number
 	statusWidth: number
 	planWidth: number
 	usedWidth: number
-	totalWidth: number
 	leftWidth: number
 	resetWidth: number
 }
@@ -110,7 +117,6 @@ interface SummaryTableLayout {
 interface DetailTableLayout {
 	labelWidth: number
 	usedWidth: number
-	totalWidth: number
 	leftWidth: number
 	resetWidth: number
 }
@@ -124,11 +130,9 @@ interface StatsDetailLine {
 	kind: 'stats'
 	label: string
 	used: string
-	total: string
 	left: string
 	reset: string
 	usedColor?: string
-	totalColor?: string
 	leftColor?: string
 }
 
@@ -139,7 +143,6 @@ interface SummaryRow {
 	status: 'ok' | 'error' | 'auth_expired' | 'not_configured'
 	plan: string
 	used: string
-	total: string
 	left: string
 	reset: string
 	usage?: ProviderUsage
@@ -148,7 +151,6 @@ interface SummaryRow {
 
 interface UsageTotals {
 	usedLabel: string
-	totalLabel: string
 	remainingLabel: string
 }
 
@@ -159,19 +161,6 @@ interface RenderContext {
 
 const TABLE_INDENT = '  '
 const COLUMN_GAP = '  '
-const MINI_BAR_WIDTH = 4
-
-function normalizeWindowLabel(label: string): string {
-	return label.trim().toLowerCase()
-}
-
-function abbreviateWindowLabel(label: string): string {
-	const normalized = normalizeWindowLabel(label)
-	if (normalized === 'weekly') return 'wk'
-	if (normalized === 'monthly') return 'mo'
-	return truncateText(label, 14)
-}
-
 function formatCount(value: number): string {
 	if (!Number.isFinite(value)) return '0'
 	if (Math.abs(value) >= 1000) {
@@ -193,15 +182,10 @@ function getUsageWindows(usage: ProviderUsage): UsageWindow[] {
 	return usage.windows.filter(window => window.label !== 'balance' && !window.label.startsWith('$'))
 }
 
-function formatMiniChart(utilization: number): string {
-	return buildBar(utilization, MINI_BAR_WIDTH)
-}
-
 function getUsageTotals(usage: ProviderUsage): UsageTotals {
 	if (usage.type === 'payAsYouGo') {
 		return {
 			usedLabel: `$${usage.used.toFixed(2)}`,
-			totalLabel: `$${usage.total.toFixed(2)}`,
 			remainingLabel: `$${usage.remaining.toFixed(2)}`,
 		}
 	}
@@ -212,7 +196,6 @@ function getUsageTotals(usage: ProviderUsage): UsageTotals {
 
 		return {
 			usedLabel: formatCount(used),
-			totalLabel: formatCount(usage.entitlement),
 			remainingLabel: formatCount(remaining),
 		}
 	}
@@ -222,7 +205,6 @@ function getUsageTotals(usage: ProviderUsage): UsageTotals {
 
 	return {
 		usedLabel: `${usedPct}%`,
-		totalLabel: '100%',
 		remainingLabel: `${remainingPct}%`,
 	}
 }
@@ -234,19 +216,6 @@ function hasAbsoluteQuotaTotals(usage: ProviderUsage): boolean {
 		typeof usage.remaining === 'number' &&
 		usage.entitlement > 0
 	)
-}
-
-function formatUsageSummary(usage: ProviderUsage): string {
-	const totals = getUsageTotals(usage)
-	const pctColor = utilizationColor(usage.utilization)
-	const parts = [
-		`${formatMiniChart(usage.utilization)} ${pctColor}${Math.round(usage.utilization)}%${c.reset}`,
-		`${c.red}${totals.usedLabel}${c.reset} ${c.dim}used${c.reset}`,
-		`${c.cyan}${totals.totalLabel}${c.reset} ${c.dim}total${c.reset}`,
-		`${c.green}${totals.remainingLabel}${c.reset} ${c.dim}left${c.reset}`,
-	]
-
-	return parts.join(` ${c.dim}·${c.reset} `)
 }
 
 function createTextDetail(text: string): DetailLine {
@@ -269,12 +238,10 @@ function getUsageWindowDetailLine(window: UsageWindow, usage?: ProviderUsage, in
 	return createStatsDetail({
 		label: window.label,
 		used: windowTotals?.usedLabel ?? `${pctUsed}%`,
-		total: windowTotals?.totalLabel ?? '100%',
 		left: windowTotals?.remainingLabel ?? `${pctLeft}%`,
 		reset: stripAnsi(formatResetTime(window.resetsAt)),
-		usedColor: windowTotals ? c.red : utilizationColor(window.utilization),
-		totalColor: c.cyan,
-		leftColor: c.green,
+		usedColor: usedMetricColor(windowTotals?.usedLabel ?? `${pctUsed}%`),
+		leftColor: leftMetricColor(windowTotals?.remainingLabel ?? `${pctLeft}%`),
 	})
 }
 
@@ -288,11 +255,9 @@ function formatUsageDetailLines(usage: ProviderUsage): DetailLine[] {
 			createStatsDetail({
 				label: 'credits',
 				used: `$${usage.used.toFixed(2)}`,
-				total: `$${usage.total.toFixed(2)}`,
 				left: `$${usage.remaining.toFixed(2)}`,
 				reset: '—',
 				usedColor: c.red,
-				totalColor: c.cyan,
 				leftColor: c.green,
 			}),
 		]
@@ -344,7 +309,6 @@ function getDetailTableLayout(rows: SummaryRow[]): DetailTableLayout | undefined
 			18,
 		),
 		usedWidth: Math.max(4, visibleLength('Used'), ...statsLines.map(detail => visibleLength(detail.used))),
-		totalWidth: Math.max(5, visibleLength('Total'), ...statsLines.map(detail => visibleLength(detail.total))),
 		leftWidth: Math.max(4, visibleLength('Left'), ...statsLines.map(detail => visibleLength(detail.left))),
 		resetWidth: Math.max(5, visibleLength('Reset'), ...statsLines.map(detail => visibleLength(detail.reset))),
 	}
@@ -359,8 +323,6 @@ function getSummaryContentWidth(layout: SummaryTableLayout): number {
 		layout.planWidth +
 		COLUMN_GAP.length +
 		layout.usedWidth +
-		COLUMN_GAP.length +
-		layout.totalWidth +
 		COLUMN_GAP.length +
 		layout.leftWidth +
 		COLUMN_GAP.length +
@@ -424,7 +386,6 @@ function getWindowTotals(window: UsageWindow): UsageTotals | undefined {
 
 	return {
 		usedLabel: formatCount(used),
-		totalLabel: formatCount(window.entitlement),
 		remainingLabel: formatCount(remaining),
 	}
 }
@@ -491,7 +452,6 @@ function buildSummaryRow(
 			status: result.status,
 			plan,
 			used: '—',
-			total: '—',
 			left: '—',
 			reset: '—',
 			details: getResultDetailLines(result, verbose),
@@ -505,7 +465,6 @@ function buildSummaryRow(
 		status: result.status,
 		plan,
 		used: totals.usedLabel,
-		total: totals.totalLabel,
 		left: totals.remainingLabel,
 		reset: getPrimaryResetLabel(result.usage),
 		usage: result.usage,
@@ -527,7 +486,6 @@ function getSummaryTableLayout(rows: SummaryRow[]): SummaryTableLayout {
 		),
 		planWidth: Math.max(10, ...rows.map(row => visibleLength(row.plan)), visibleLength('Plan')),
 		usedWidth: Math.max(8, ...rows.map(row => visibleLength(row.used)), visibleLength('Used')),
-		totalWidth: Math.max(8, ...rows.map(row => visibleLength(row.total)), visibleLength('Total')),
 		leftWidth: Math.max(8, ...rows.map(row => visibleLength(row.left)), visibleLength('Left')),
 		resetWidth: Math.max(8, ...rows.map(row => visibleLength(row.reset)), visibleLength('Reset')),
 	}
@@ -541,19 +499,15 @@ function formatSummaryRow(row: SummaryRow, layout: SummaryTableLayout): string {
 	)
 	const usedCell =
 		row.status === 'ok'
-			? formatMetricCell(row.used, layout.usedWidth, c.red)
+			? formatMetricCell(row.used, layout.usedWidth, usedMetricColor(row.used))
 			: padLeft(`${c.dim}${row.used}${c.reset}`, layout.usedWidth)
-	const totalCell =
-		row.status === 'ok'
-			? formatMetricCell(row.total, layout.totalWidth, c.cyan)
-			: padLeft(`${c.dim}${row.total}${c.reset}`, layout.totalWidth)
 	const leftCell =
 		row.status === 'ok'
-			? formatMetricCell(row.left, layout.leftWidth, c.green)
+			? formatMetricCell(row.left, layout.leftWidth, leftMetricColor(row.left))
 			: padLeft(`${c.dim}${row.left}${c.reset}`, layout.leftWidth)
 	const resetCell = padLeft(row.reset === '—' ? `${c.dim}—${c.reset}` : row.reset, layout.resetWidth)
 
-	return `${TABLE_INDENT}${providerCell}${COLUMN_GAP}${formatStatusCell(row.status, layout.statusWidth)}${COLUMN_GAP}${planCell}${COLUMN_GAP}${usedCell}${COLUMN_GAP}${totalCell}${COLUMN_GAP}${leftCell}${COLUMN_GAP}${resetCell}`
+	return `${TABLE_INDENT}${providerCell}${COLUMN_GAP}${formatStatusCell(row.status, layout.statusWidth)}${COLUMN_GAP}${planCell}${COLUMN_GAP}${usedCell}${COLUMN_GAP}${leftCell}${COLUMN_GAP}${resetCell}`
 }
 
 function formatDetailLine(
@@ -571,35 +525,10 @@ function formatDetailLine(
 		detailLayout.labelWidth,
 	)
 	const usedCell = formatMetricCell(detail.used, detailLayout.usedWidth, detail.usedColor || c.red)
-	const totalCell = formatMetricCell(detail.total, detailLayout.totalWidth, detail.totalColor || c.cyan)
 	const leftCell = formatMetricCell(detail.left, detailLayout.leftWidth, detail.leftColor || c.green)
 	const resetCell = padLeft(detail.reset === '—' ? `${c.dim}—${c.reset}` : detail.reset, detailLayout.resetWidth)
 
-	return `${TABLE_INDENT}${prefix}${c.dim}↳${c.reset} ${labelCell}${COLUMN_GAP}${c.dim}used${c.reset} ${usedCell}${COLUMN_GAP}${c.dim}total${c.reset} ${totalCell}${COLUMN_GAP}${c.dim}left${c.reset} ${leftCell}${COLUMN_GAP}${c.dim}reset${c.reset} ${resetCell}`
-}
-
-function formatQuotaWindow(window: UsageWindow, usage: ProviderUsage): string {
-	const used = Math.round(window.utilization)
-	const left = Math.max(0, 100 - used)
-	const color = utilizationColor(used)
-	const label = `${c.dim}${abbreviateWindowLabel(window.label)}${c.reset}`
-	const chart = formatMiniChart(window.utilization)
-
-	if (
-		usage.type === 'quotaBased' &&
-		typeof usage.remaining === 'number' &&
-		typeof usage.entitlement === 'number' &&
-		usage.entitlement > 0 &&
-		getUsageWindows(usage)[0] === window
-	) {
-		return `${label} ${chart} ${c.green}${formatCount(usage.remaining)}${c.reset}${c.dim}/${c.reset}${c.cyan}${formatCount(usage.entitlement)}${c.reset}`
-	}
-
-	return `${label} ${chart} ${color}${used}${c.reset}${c.dim}/${c.reset}${color}${left}${c.reset}`
-}
-
-function formatUsageDetails(usage: ProviderUsage): string {
-	return formatUsageSummary(usage)
+	return `${TABLE_INDENT}${prefix}${c.dim}↳${c.reset} ${labelCell}${COLUMN_GAP}${c.dim}used${c.reset} ${usedCell}${COLUMN_GAP}${c.dim}left${c.reset} ${leftCell}${COLUMN_GAP}${c.dim}reset${c.reset} ${resetCell}`
 }
 
 function formatPlanValue(rawPlan: string | undefined): string | undefined {
@@ -745,143 +674,6 @@ function getPlanLabel(
 	}
 
 	return extractPlanFromUsage(usage) || extractPlanFromProviderName(result)
-}
-
-function formatPlanCell(plan: string | undefined, width: number): string {
-	if (!plan) {
-		return padRight(`${c.dim}—${c.reset}`, width)
-	}
-	return padRight(`${c.cyan}${plan}${c.reset}`, width)
-}
-
-function getTableLayout(results: ProviderResult[], context: RenderContext): TableLayout {
-	const labels = results.flatMap(result => [
-		getProviderDisplayName(result),
-		...(result.accounts?.map(acc => `  ${getDisplayLabel(result, acc.label, context)}`) ?? []),
-	])
-
-	const providerWidth = clamp(Math.max(18, ...labels.map(label => visibleLength(label))), 18, Number.MAX_SAFE_INTEGER)
-
-	const planLengths = results.flatMap(result => {
-		const plans: Array<string | undefined> = []
-		if (!hasMultiAuthAccountRows(result)) {
-			plans.push(getPlanLabel(result, result.usage, undefined, context, result.plan))
-		}
-		for (const account of result.accounts ?? []) {
-			plans.push(getPlanLabel(result, account.usage, account.label, context, account.plan))
-		}
-		return plans.map(plan => visibleLength(plan ?? '—'))
-	})
-
-	const planWidth = clamp(Math.max(10, ...planLengths), 10, Number.MAX_SAFE_INTEGER)
-
-	return {
-		providerWidth,
-		usageWidth: clamp(
-			Math.max(
-				18,
-				...results.flatMap(result => {
-					const values: string[] = []
-					if (result.usage) values.push(formatUsageDetails(result.usage))
-					for (const account of result.accounts ?? []) {
-						values.push(formatUsageDetails(account.usage))
-					}
-					return values.map(value => visibleLength(value))
-				}),
-			),
-			18,
-			Number.MAX_SAFE_INTEGER,
-		),
-		planWidth,
-	}
-}
-
-// ── Format a single result row ────────────────────────────────
-
-function formatResultRow(
-	result: ProviderResult,
-	layout: TableLayout,
-	context: RenderContext,
-	labels?: { rawLabel?: string; displayLabel?: string },
-): string {
-	const rawLabel = labels?.rawLabel
-	const displayLabel = labels?.displayLabel || getDisplayLabel(result, rawLabel, context)
-	const name = padRight(displayLabel, layout.providerWidth)
-	const tablePrefix = `${TABLE_INDENT}${name}${COLUMN_GAP}`
-
-	if (result.status === 'not_configured') {
-		return `${TABLE_INDENT}${c.dim}${name}${COLUMN_GAP}${padRight('not configured', layout.usageWidth + layout.planWidth + COLUMN_GAP.length + 6)}${c.reset}`
-	}
-
-	if (result.status === 'auth_expired') {
-		return `${tablePrefix}${c.red}${padRight('auth expired', layout.usageWidth)}${c.reset}${COLUMN_GAP}${formatPlanCell(undefined, layout.planWidth)}${COLUMN_GAP}${c.dim}${result.error || ''}${c.reset}`
-	}
-
-	if (result.status === 'error') {
-		return `${tablePrefix}${c.red}${padRight('error', layout.usageWidth)}${c.reset}${COLUMN_GAP}${formatPlanCell(undefined, layout.planWidth)}${COLUMN_GAP}${c.dim}${result.error || ''}${c.reset}`
-	}
-
-	if (!result.usage) {
-		return `${tablePrefix}${c.dim}no data${c.reset}`
-	}
-
-	const usage = result.usage
-	const usageCell = padRight(formatUsageDetails(usage), layout.usageWidth)
-	const planCell = formatPlanCell(getPlanLabel(result, usage, rawLabel, context, result.plan), layout.planWidth)
-
-	if (usage.type === 'payAsYouGo') {
-		return `${tablePrefix}${usageCell}${COLUMN_GAP}${planCell}${COLUMN_GAP}${c.dim}—${c.reset}`
-	}
-
-	// Reset time: pick earliest reset
-	const resets = usage.windows
-		.filter(w => w.resetsAt && w.resetsAt > Date.now())
-		.sort((a, b) => (a.resetsAt || 0) - (b.resetsAt || 0))
-	const resetStr = resets.length > 0 ? formatResetTime(resets[0].resetsAt) : `${c.dim}—${c.reset}`
-
-	return `${tablePrefix}${usageCell}${COLUMN_GAP}${planCell}${COLUMN_GAP}${resetStr}`
-}
-
-function formatProviderHeaderRow(result: ProviderResult, layout: TableLayout): string {
-	const name = padRight(getProviderDisplayName(result), layout.providerWidth)
-	return `${TABLE_INDENT}${c.bold}${name}${c.reset}${COLUMN_GAP}${' '.repeat(layout.usageWidth)}${COLUMN_GAP}${' '.repeat(layout.planWidth)}`
-}
-
-function formatDetailRow(layout: TableLayout, detail: DetailLine): string {
-	const emptyProvider = ' '.repeat(layout.providerWidth)
-	const emptyPlan = ' '.repeat(layout.planWidth)
-	const content = detail.kind === 'text' ? detail.text : detail.label
-	return `${TABLE_INDENT}${emptyProvider}${COLUMN_GAP}${c.dim}↳${c.reset} ${content}${COLUMN_GAP}${emptyPlan}`
-}
-
-function formatResultDetailRows(result: ProviderResult, layout: TableLayout): string[] {
-	if (result.status !== 'ok' || !result.usage) return []
-
-	return formatUsageDetailLines(result.usage).map(detail => formatDetailRow(layout, detail))
-}
-
-// ── Format account sub-rows ───────────────────────────────────
-
-function formatAccountRows(result: ProviderResult, layout: TableLayout, context: RenderContext): string[] {
-	if (!result.accounts || result.accounts.length === 0) return []
-
-	return result.accounts.map(acc => {
-		const subLabel = `${TABLE_INDENT}${getDisplayLabel(result, acc.label, context)}`
-		const subResult: ProviderResult = {
-			providerId: result.providerId,
-			providerName: acc.label,
-			billingType: result.billingType,
-			plan: acc.plan,
-			status: acc.status,
-			usage: acc.usage,
-			error: acc.error,
-			fetchedAt: result.fetchedAt,
-		}
-		return formatResultRow(subResult, layout, context, {
-			rawLabel: acc.label,
-			displayLabel: subLabel,
-		})
-	})
 }
 
 // ── Main command ──────────────────────────────────────────────
@@ -1052,7 +844,6 @@ function renderTable(results: ProviderResult[], verbose: boolean = false): void 
 						status: 'ok',
 						plan: 'Plan',
 						used: 'Used',
-						total: 'Total',
 						left: 'Left',
 						reset: 'Reset',
 						details: [],
@@ -1062,7 +853,7 @@ function renderTable(results: ProviderResult[], verbose: boolean = false): void 
 	const detailLayout = getDetailTableLayout(summaryRows)
 
 	console.log()
-	const header = `${TABLE_INDENT}${c.bold}${padRight('Provider / Account', layout.providerWidth)}${COLUMN_GAP}${padRight('Status', layout.statusWidth)}${COLUMN_GAP}${padRight('Plan', layout.planWidth)}${COLUMN_GAP}${padLeft('Used', layout.usedWidth)}${COLUMN_GAP}${padLeft('Total', layout.totalWidth)}${COLUMN_GAP}${padLeft('Left', layout.leftWidth)}${COLUMN_GAP}${padLeft('Reset', layout.resetWidth)}${c.reset}`
+	const header = `${TABLE_INDENT}${c.bold}${padRight('Provider / Account', layout.providerWidth)}${COLUMN_GAP}${padRight('Status', layout.statusWidth)}${COLUMN_GAP}${padRight('Plan', layout.planWidth)}${COLUMN_GAP}${padLeft('Used', layout.usedWidth)}${COLUMN_GAP}${padLeft('Left', layout.leftWidth)}${COLUMN_GAP}${padLeft('Reset', layout.resetWidth)}${c.reset}`
 	const divider = formatSummaryDivider(layout)
 
 	if (configured.length > 0) {

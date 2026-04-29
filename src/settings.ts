@@ -1,4 +1,4 @@
-import { flushStoreToDisk, loadStore, saveStore, updateAccount } from './store.js'
+import { flushStoreToDisk, loadStore, saveStore } from './store.js'
 import { logInfo, logError } from './logger.js'
 import {
 	DEFAULT_FEATURE_FLAGS,
@@ -11,7 +11,7 @@ import {
 	type SettingsValidationError,
 } from './types.js'
 
-// Phase F: Settings precedence: defaults -> persisted -> runtime -> env
+// Settings precedence: defaults -> persisted -> runtime -> env.
 
 export interface SettingsResult {
 	settings: RotationSettings
@@ -88,7 +88,7 @@ function resolveSettings(includeEnvOverrides: boolean): SettingsResult {
 			}
 		}
 
-		// Phase G: Feature flag environment overrides
+		// Feature flag environment overrides
 		const envAntigravity = readEnv(
 			'OPENCODE_ENHANCER_ANTIGRAVITY_ENABLED',
 			'OPENCODE_MULTI_AUTH_ANTIGRAVITY_ENABLED',
@@ -136,7 +136,7 @@ function resolveSettings(includeEnvOverrides: boolean): SettingsResult {
 	return { settings, source, errors: errors.length > 0 ? errors : undefined }
 }
 
-// Phase F: Get settings with proper precedence (including env overrides)
+// Get settings with proper precedence, including env overrides.
 export function getSettings(): SettingsResult {
 	return resolveSettings(true)
 }
@@ -146,7 +146,7 @@ export function getRuntimeSettings(): SettingsResult {
 	return resolveSettings(false)
 }
 
-// Phase F: Update settings with validation
+// Update settings with validation.
 export function updateSettings(
 	updates: Partial<RotationSettings>,
 	actor: string = 'system',
@@ -183,7 +183,7 @@ export function updateSettings(
 	return { success: true, settings: newSettings }
 }
 
-// Phase F: Reset settings to defaults
+// Reset settings to defaults.
 export function resetSettings(actor: string = 'system'): RotationSettings {
 	const store = loadStore()
 	delete (store as any).settings
@@ -195,7 +195,7 @@ export function resetSettings(actor: string = 'system'): RotationSettings {
 	return { ...DEFAULT_ROTATION_SETTINGS }
 }
 
-// Phase F: Apply a preset
+// Apply a preset.
 export function applyPreset(
 	preset: WeightPreset,
 	actor: string = 'system',
@@ -265,7 +265,7 @@ export function applyPreset(
 	return updateSettings(updates, actor)
 }
 
-// Phase F: Calculate weighted selection
+// Calculate weighted selection.
 export function calculateWeightedSelection(aliases: string[], weights: Record<string, number>): string | null {
 	if (aliases.length === 0) return null
 
@@ -291,7 +291,7 @@ export function calculateWeightedSelection(aliases: string[], weights: Record<st
 	return available[available.length - 1]
 }
 
-// Phase F: Get settings with environment info
+// Get settings with environment info.
 export function getSettingsWithInfo(): {
 	settings: RotationSettings
 	source: string
@@ -325,7 +325,7 @@ export function getSettingsWithInfo(): {
 	}
 }
 
-// Phase G: Check if a feature flag is enabled
+// Check whether a feature flag is enabled.
 export function isFeatureEnabled(flag: keyof NonNullable<RotationSettings['featureFlags']>): boolean {
 	const settings = getSettings()
 	return settings.settings.featureFlags?.[flag] ?? false
