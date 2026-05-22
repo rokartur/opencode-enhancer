@@ -7,8 +7,10 @@ import {
 	getAccountUserIdFromClaims,
 	getEmailFromClaims,
 	getNameFromClaims,
+	getSubscriptionActiveUntilFromClaims,
 	getUserIdFromClaims,
 } from './codex-auth.js'
+import type { AccountCredentials } from './types.js'
 
 const OPENAI_ISSUER = 'https://auth.openai.com'
 const AUTH_SYNC_COOLDOWN_MS = 10_000
@@ -78,15 +80,20 @@ export async function syncAuthFromOpenCode(getAuth: () => Promise<Auth>): Promis
 	const derivedAccountId = getAccountIdFromClaims(accessClaims)
 	const derivedAccountUserId = getAccountUserIdFromClaims(accessClaims)
 	const derivedUserId = getUserIdFromClaims(accessClaims)
+	const derivedSubscriptionActiveUntil = getSubscriptionActiveUntilFromClaims(accessClaims)
 	if (existingAlias) {
-		updateAccount(existingAlias, {
+		const updates: Partial<AccountCredentials> = {
 			accessToken: auth.access,
 			refreshToken: auth.refresh,
 			expiresAt: auth.expires,
 			email: derivedEmail,
 			name: derivedName,
 			accountId: derivedAccountId,
-		})
+		}
+		if (derivedSubscriptionActiveUntil) {
+			updates.subscriptionActiveUntil = derivedSubscriptionActiveUntil
+		}
+		updateAccount(existingAlias, updates)
 		setActiveAlias(existingAlias)
 		return
 	}
@@ -98,13 +105,17 @@ export async function syncAuthFromOpenCode(getAuth: () => Promise<Auth>): Promis
 	if (email) {
 		const existingByEmail = findAccountAliasByEmail(email, store)
 		if (existingByEmail) {
-			updateAccount(existingByEmail, {
+			const updates: Partial<AccountCredentials> = {
 				accessToken: auth.access,
 				refreshToken: auth.refresh,
 				expiresAt: auth.expires,
 				email,
 				name,
-			})
+			}
+			if (derivedSubscriptionActiveUntil) {
+				updates.subscriptionActiveUntil = derivedSubscriptionActiveUntil
+			}
+			updateAccount(existingByEmail, updates)
 			setActiveAlias(existingByEmail)
 			return
 		}
@@ -132,6 +143,7 @@ export async function syncAuthFromOpenCode(getAuth: () => Promise<Auth>): Promis
 		accountId: derivedAccountId,
 		accountUserId: derivedAccountUserId,
 		userId: derivedUserId,
+		subscriptionActiveUntil: derivedSubscriptionActiveUntil,
 		source: 'opencode',
 	})
 	setActiveAlias(alias)

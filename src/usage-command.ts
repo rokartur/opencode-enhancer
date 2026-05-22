@@ -8,6 +8,7 @@ import type { AccountCredentials } from './types.js'
 import { readUsageCache, writeUsageCache } from './usage-cache.js'
 import { getAccountIdFromClaims, getEmailFromClaims, getNameFromClaims, syncCodexAuthFile } from './codex-auth.js'
 import { getOAuthCredential } from './providers/auth.js'
+import { formatSubscriptionDaysLabel, getAccountSubscriptionActiveUntil } from './subscription.js'
 
 // ── ANSI helpers ──────────────────────────────────────────────
 
@@ -109,6 +110,7 @@ interface SummaryTableLayout {
 	providerWidth: number
 	statusWidth: number
 	planWidth: number
+	subscriptionWidth: number
 	usedWidth: number
 	leftWidth: number
 	resetWidth: number
@@ -142,6 +144,7 @@ interface SummaryRow {
 	provider: string
 	status: 'ok' | 'error' | 'auth_expired' | 'not_configured'
 	plan: string
+	subscription: string
 	used: string
 	left: string
 	reset: string
@@ -157,6 +160,7 @@ interface UsageTotals {
 interface RenderContext {
 	activeAlias: string | null
 	codexPlansByAlias: Map<string, string>
+	codexSubscriptionsByAlias: Map<string, number>
 }
 
 const TABLE_INDENT = '  '
@@ -322,6 +326,8 @@ function getSummaryContentWidth(layout: SummaryTableLayout): number {
 		COLUMN_GAP.length +
 		layout.planWidth +
 		COLUMN_GAP.length +
+		layout.subscriptionWidth +
+		COLUMN_GAP.length +
 		layout.usedWidth +
 		COLUMN_GAP.length +
 		layout.leftWidth +
@@ -451,6 +457,7 @@ function buildSummaryRow(
 			provider,
 			status: result.status,
 			plan,
+			subscription: getSubscriptionLabel(result, rawLabel, context),
 			used: '—',
 			left: '—',
 			reset: '—',
@@ -464,6 +471,7 @@ function buildSummaryRow(
 		provider,
 		status: result.status,
 		plan,
+		subscription: getSubscriptionLabel(result, rawLabel, context),
 		used: totals.usedLabel,
 		left: totals.remainingLabel,
 		reset: getPrimaryResetLabel(result.usage),
@@ -485,6 +493,11 @@ function getSummaryTableLayout(rows: SummaryRow[]): SummaryTableLayout {
 			visibleLength('Status'),
 		),
 		planWidth: Math.max(10, ...rows.map(row => visibleLength(row.plan)), visibleLength('Plan')),
+		subscriptionWidth: Math.max(
+			11,
+			...rows.map(row => visibleLength(row.subscription)),
+			visibleLength('Sub expires'),
+		),
 		usedWidth: Math.max(8, ...rows.map(row => visibleLength(row.used)), visibleLength('Used')),
 		leftWidth: Math.max(8, ...rows.map(row => visibleLength(row.left)), visibleLength('Left')),
 		resetWidth: Math.max(8, ...rows.map(row => visibleLength(row.reset)), visibleLength('Reset')),
@@ -497,6 +510,10 @@ function formatSummaryRow(row: SummaryRow, layout: SummaryTableLayout): string {
 		row.plan === '—' ? `${c.dim}—${c.reset}` : `${c.cyan}${row.plan}${c.reset}`,
 		layout.planWidth,
 	)
+	const subscriptionCell = padLeft(
+		row.subscription === '-' ? `${c.dim}-${c.reset}` : row.subscription,
+		layout.subscriptionWidth,
+	)
 	const usedCell =
 		row.status === 'ok'
 			? formatMetricCell(row.used, layout.usedWidth, usedMetricColor(row.used))
@@ -507,7 +524,7 @@ function formatSummaryRow(row: SummaryRow, layout: SummaryTableLayout): string {
 			: padLeft(`${c.dim}${row.left}${c.reset}`, layout.leftWidth)
 	const resetCell = padLeft(row.reset === '—' ? `${c.dim}—${c.reset}` : row.reset, layout.resetWidth)
 
-	return `${TABLE_INDENT}${providerCell}${COLUMN_GAP}${formatStatusCell(row.status, layout.statusWidth)}${COLUMN_GAP}${planCell}${COLUMN_GAP}${usedCell}${COLUMN_GAP}${leftCell}${COLUMN_GAP}${resetCell}`
+	return `${TABLE_INDENT}${providerCell}${COLUMN_GAP}${formatStatusCell(row.status, layout.statusWidth)}${COLUMN_GAP}${planCell}${COLUMN_GAP}${subscriptionCell}${COLUMN_GAP}${usedCell}${COLUMN_GAP}${leftCell}${COLUMN_GAP}${resetCell}`
 }
 
 function formatDetailLine(
@@ -608,16 +625,23 @@ function getCodexPlanFromAccount(account: AccountCredentials): string | undefine
 function getRenderContext(): RenderContext {
 	const store = loadStore()
 	const codexPlansByAlias = new Map<string, string>()
+	const codexSubscriptionsByAlias = new Map<string, number>()
 	for (const account of Object.values(store.accounts)) {
 		const plan = getCodexPlanFromAccount(account)
 		if (plan) {
 			codexPlansByAlias.set(account.alias, plan)
+		}
+
+		const subscriptionActiveUntil = getAccountSubscriptionActiveUntil(account)
+		if (subscriptionActiveUntil) {
+			codexSubscriptionsByAlias.set(account.alias, subscriptionActiveUntil)
 		}
 	}
 
 	return {
 		activeAlias: store.activeAlias,
 		codexPlansByAlias,
+		codexSubscriptionsByAlias,
 	}
 }
 
@@ -674,6 +698,20 @@ function getPlanLabel(
 	}
 
 	return extractPlanFromUsage(usage) || extractPlanFromProviderName(result)
+}
+
+function getSubscriptionLabel(result: ProviderResult, rawLabel: string | undefined, context: RenderContext): string {
+	const direct = result.subscriptionActiveUntil
+	if (direct) return formatSubscriptionDaysLabel(direct)
+
+	if (result.providerId === 'codex') {
+		const lookupLabel = normalizePlanLookupLabel(rawLabel)
+		if (lookupLabel) {
+			return formatSubscriptionDaysLabel(context.codexSubscriptionsByAlias.get(lookupLabel))
+		}
+	}
+
+	return '-'
 }
 
 // ── Main command ──────────────────────────────────────────────
@@ -810,6 +848,7 @@ function renderTable(results: ProviderResult[], verbose: boolean = false): void 
 					providerName: account.label,
 					billingType: result.billingType,
 					plan: account.plan,
+					subscriptionActiveUntil: account.subscriptionActiveUntil,
 					status: account.status,
 					usage: account.usage,
 					error: account.error,
@@ -843,6 +882,7 @@ function renderTable(results: ProviderResult[], verbose: boolean = false): void 
 						provider: 'Provider / Account',
 						status: 'ok',
 						plan: 'Plan',
+						subscription: 'Sub expires',
 						used: 'Used',
 						left: 'Left',
 						reset: 'Reset',
@@ -853,7 +893,7 @@ function renderTable(results: ProviderResult[], verbose: boolean = false): void 
 	const detailLayout = getDetailTableLayout(summaryRows)
 
 	console.log()
-	const header = `${TABLE_INDENT}${c.bold}${padRight('Provider / Account', layout.providerWidth)}${COLUMN_GAP}${padRight('Status', layout.statusWidth)}${COLUMN_GAP}${padRight('Plan', layout.planWidth)}${COLUMN_GAP}${padLeft('Used', layout.usedWidth)}${COLUMN_GAP}${padLeft('Left', layout.leftWidth)}${COLUMN_GAP}${padLeft('Reset', layout.resetWidth)}${c.reset}`
+	const header = `${TABLE_INDENT}${c.bold}${padRight('Provider / Account', layout.providerWidth)}${COLUMN_GAP}${padRight('Status', layout.statusWidth)}${COLUMN_GAP}${padRight('Plan', layout.planWidth)}${COLUMN_GAP}${padLeft('Sub expires', layout.subscriptionWidth)}${COLUMN_GAP}${padLeft('Used', layout.usedWidth)}${COLUMN_GAP}${padLeft('Left', layout.leftWidth)}${COLUMN_GAP}${padLeft('Reset', layout.resetWidth)}${c.reset}`
 	const divider = formatSummaryDivider(layout)
 
 	if (configured.length > 0) {
@@ -873,6 +913,7 @@ function renderTable(results: ProviderResult[], verbose: boolean = false): void 
 					providerName: account.label,
 					billingType: result.billingType,
 					plan: account.plan,
+					subscriptionActiveUntil: account.subscriptionActiveUntil,
 					status: account.status,
 					usage: account.usage,
 					error: account.error,

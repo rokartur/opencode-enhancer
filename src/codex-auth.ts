@@ -44,6 +44,7 @@ export interface CodexAuthSummary {
 	accountUserId?: string
 	userId?: string
 	planType?: string
+	subscriptionActiveUntil?: number
 	expiresAt?: number
 	lastRefresh?: string
 	hasAccessToken: boolean
@@ -179,6 +180,31 @@ function getPlanTypeFromClaims(claims: Record<string, any> | null): string | und
 	return undefined
 }
 
+function normalizeTimestampMs(value: number): number | undefined {
+	if (!Number.isFinite(value) || value <= 0) return undefined
+	return value < 10_000_000_000 ? value * 1000 : value
+}
+
+function parseTimestampMs(value: unknown): number | undefined {
+	if (typeof value === 'number') return normalizeTimestampMs(value)
+	if (typeof value !== 'string') return undefined
+
+	const trimmed = value.trim()
+	if (!trimmed) return undefined
+
+	const numeric = Number(trimmed)
+	if (Number.isFinite(numeric)) return normalizeTimestampMs(numeric)
+
+	const parsed = Date.parse(trimmed)
+	return Number.isFinite(parsed) ? parsed : undefined
+}
+
+export function getSubscriptionActiveUntilFromClaims(claims: Record<string, any> | null): number | undefined {
+	if (!claims) return undefined
+	const auth = claims['https://api.openai.com/auth'] as { chatgpt_subscription_active_until?: unknown } | undefined
+	return parseTimestampMs(auth?.chatgpt_subscription_active_until)
+}
+
 export function getExpiryFromClaims(claims: Record<string, any> | null): number | undefined {
 	if (!claims) return undefined
 	const exp = claims.exp
@@ -248,6 +274,8 @@ export function getCodexAuthSummary(): CodexAuthSummary {
 	const accountUserId = getAccountUserIdFromClaims(accessClaims) || getAccountUserIdFromClaims(idClaims)
 	const userId = getUserIdFromClaims(accessClaims) || getUserIdFromClaims(idClaims)
 	const planType = getPlanTypeFromClaims(accessClaims) || getPlanTypeFromClaims(idClaims)
+	const subscriptionActiveUntil =
+		getSubscriptionActiveUntilFromClaims(accessClaims) || getSubscriptionActiveUntilFromClaims(idClaims)
 	const expiresAt = getExpiryFromClaims(accessClaims) || getExpiryFromClaims(idClaims)
 	return {
 		email,
@@ -255,6 +283,7 @@ export function getCodexAuthSummary(): CodexAuthSummary {
 		accountUserId,
 		userId,
 		planType,
+		subscriptionActiveUntil,
 		expiresAt,
 		lastRefresh: normalized?.lastRefresh,
 		hasAccessToken: Boolean(access),
@@ -331,6 +360,8 @@ export function syncCodexAuthFile(options?: { setActiveAlias?: boolean; allowAdd
 	const accountUserId = getAccountUserIdFromClaims(accessClaims) || getAccountUserIdFromClaims(idClaims)
 	const userId = getUserIdFromClaims(accessClaims) || getUserIdFromClaims(idClaims)
 	const planType = getPlanTypeFromClaims(accessClaims) || getPlanTypeFromClaims(idClaims)
+	const subscriptionActiveUntil =
+		getSubscriptionActiveUntilFromClaims(accessClaims) || getSubscriptionActiveUntilFromClaims(idClaims)
 	const expiresAt = getExpiryFromClaims(accessClaims) || getExpiryFromClaims(idClaims) || Date.now()
 
 	const store = loadStore()
@@ -353,6 +384,9 @@ export function syncCodexAuthFile(options?: { setActiveAlias?: boolean; allowAdd
 		lastRefresh: normalized.lastRefresh,
 		lastSeenAt: now,
 		source: 'codex',
+	}
+	if (subscriptionActiveUntil) {
+		update.subscriptionActiveUntil = subscriptionActiveUntil
 	}
 	if (normalized.idToken) {
 		update.idToken = normalized.idToken

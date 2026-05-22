@@ -6,7 +6,13 @@ import { buildRandomizedAlias } from './alias.js'
 import { addAccount, updateAccount, loadStore } from './store.js'
 import { clearAuthInvalid } from './rotation.js'
 import { decodeJwtPayload } from './jwt.js'
-import { getAccountIdFromClaims, getEmailFromClaims, getExpiryFromClaims, getNameFromClaims } from './codex-auth.js'
+import {
+	getAccountIdFromClaims,
+	getEmailFromClaims,
+	getExpiryFromClaims,
+	getNameFromClaims,
+	getSubscriptionActiveUntilFromClaims,
+} from './codex-auth.js'
 import type { AccountCredentials } from './types.js'
 
 const OPENAI_ISSUER = 'https://auth.openai.com'
@@ -206,6 +212,8 @@ export async function loginAccount(
 				}
 
 				const accountId = getAccountIdFromClaims(idClaims) || getAccountIdFromClaims(accessClaims)
+				const subscriptionActiveUntil =
+					getSubscriptionActiveUntilFromClaims(accessClaims) || getSubscriptionActiveUntilFromClaims(idClaims)
 
 				const resolvedAlias = buildGeneratedAlias({ preferredAlias: alias, email })
 				const beforeCount = Object.keys(loadStore().accounts).length
@@ -217,6 +225,7 @@ export async function loginAccount(
 						refreshToken: tokens.refresh_token,
 						idToken: tokens.id_token,
 						accountId,
+						subscriptionActiveUntil,
 						expiresAt,
 						email,
 						name,
@@ -331,6 +340,10 @@ export async function refreshToken(alias: string): Promise<AccountCredentials | 
 			lastRefresh: new Date().toISOString(),
 			idToken: tokens.id_token || account.idToken,
 			accountId: getAccountIdFromClaims(idClaims) || getAccountIdFromClaims(accessClaims) || account.accountId,
+			subscriptionActiveUntil:
+				getSubscriptionActiveUntilFromClaims(accessClaims) ||
+				getSubscriptionActiveUntilFromClaims(idClaims) ||
+				account.subscriptionActiveUntil,
 		}
 
 		const updatedStore = updateAccount(alias, updates)

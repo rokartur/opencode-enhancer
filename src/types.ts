@@ -8,6 +8,7 @@ export interface AccountCredentials {
 	accountUserId?: string
 	userId?: string
 	planType?: string
+	subscriptionActiveUntil?: number
 	expiresAt: number // Unix timestamp
 	email?: string
 	name?: string // Full name from OpenAI userinfo

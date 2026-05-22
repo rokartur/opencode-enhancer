@@ -6,6 +6,7 @@ import { loginAccount } from './auth.js'
 import { removeAccount, listAccounts, getStorePath, loadStore } from './store.js'
 import { runPluginsUpdateCommand } from './plugin-updates.js'
 import { runUsageCommand } from './usage-command.js'
+import { formatSubscriptionDaysLabel, getAccountSubscriptionActiveUntil } from './subscription.js'
 
 const args = process.argv.slice(2)
 const command = args[0]
@@ -41,6 +42,8 @@ function formatAccountUsageHint(account: ReturnType<typeof listAccounts>[number]
 			parts.push(`weekly ${weekly.remaining}% left`)
 		}
 	}
+
+	parts.push(`sub ${formatSubscriptionDaysLabel(getAccountSubscriptionActiveUntil(account))}`)
 
 	return parts.join(' · ')
 }

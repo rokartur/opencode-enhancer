@@ -65,6 +65,7 @@ export interface ProviderAccountResult {
 	label: string
 	email?: string
 	plan?: string
+	subscriptionActiveUntil?: number
 	usage: ProviderUsage
 	status: ProviderStatus
 	error?: string
@@ -76,6 +77,7 @@ export interface ProviderResult {
 	billingType: BillingType
 	status: ProviderStatus
 	plan?: string
+	subscriptionActiveUntil?: number
 	usage?: ProviderUsage
 	accounts?: ProviderAccountResult[]
 	error?: string

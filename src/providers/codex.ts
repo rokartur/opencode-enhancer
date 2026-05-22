@@ -5,6 +5,7 @@
 import { loadStore, listAccounts, updateAccount } from '../store.js'
 import { mergeRateLimits } from '../rate-limits.js'
 import { fetchUsageRateLimitsForAccount } from '../usage-limits.js'
+import { getAccountSubscriptionActiveUntil } from '../subscription.js'
 import type { ProviderAccountResult, ProviderResult, UsageProvider, UsageWindow } from './types.js'
 
 export const codexProvider: UsageProvider = {
@@ -34,12 +35,15 @@ export const codexProvider: UsageProvider = {
 		// Fetch usage for all accounts in parallel
 		const results = await Promise.allSettled(
 			accounts.map(async (acc): Promise<ProviderAccountResult> => {
+				const subscriptionActiveUntil = getAccountSubscriptionActiveUntil(acc)
+
 				// Skip disabled accounts
 				if (acc.enabled === false) {
 					return {
 						label: acc.alias,
 						email: acc.email,
 						plan: acc.planType,
+						subscriptionActiveUntil,
 						status: 'error',
 						error: 'Account disabled',
 						usage: { type: 'quotaBased', utilization: 0, windows: [] },
@@ -52,6 +56,7 @@ export const codexProvider: UsageProvider = {
 						label: acc.alias,
 						email: acc.email,
 						plan: acc.planType,
+						subscriptionActiveUntil,
 						status: 'auth_expired',
 						error: 'Auth invalid',
 						usage: { type: 'quotaBased', utilization: 0, windows: [] },
@@ -74,6 +79,7 @@ export const codexProvider: UsageProvider = {
 							label: acc.alias,
 							email: acc.email,
 							plan: acc.planType,
+							subscriptionActiveUntil,
 							status: 'auth_expired',
 							error: result.error,
 							usage: { type: 'quotaBased', utilization: 0, windows: [] },
@@ -85,6 +91,7 @@ export const codexProvider: UsageProvider = {
 							label: acc.alias,
 							email: acc.email,
 							plan: acc.planType,
+							subscriptionActiveUntil,
 							status: 'error',
 							error: result.error,
 							usage: { type: 'quotaBased', utilization: 0, windows: [] },
@@ -144,6 +151,7 @@ export const codexProvider: UsageProvider = {
 						label: acc.alias,
 						email: acc.email,
 						plan: acc.planType,
+						subscriptionActiveUntil,
 						status: 'ok',
 						usage: {
 							type: 'quotaBased',
@@ -156,6 +164,7 @@ export const codexProvider: UsageProvider = {
 						label: acc.alias,
 						email: acc.email,
 						plan: acc.planType,
+						subscriptionActiveUntil,
 						status: 'error',
 						error: `${err}`,
 						usage: { type: 'quotaBased', utilization: 0, windows: [] },

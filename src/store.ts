@@ -285,6 +285,8 @@ function validateAccount(acc: any, alias: string): AccountCredentials | null {
 		accountId: typeof acc.accountId === 'string' ? acc.accountId : undefined,
 		accountUserId: typeof acc.accountUserId === 'string' ? acc.accountUserId : undefined,
 		userId: typeof acc.userId === 'string' ? acc.userId : undefined,
+		subscriptionActiveUntil:
+			typeof acc.subscriptionActiveUntil === 'number' ? acc.subscriptionActiveUntil : undefined,
 		expiresAt: acc.expiresAt,
 		email: typeof acc.email === 'string' ? acc.email : undefined,
 		name: typeof acc.name === 'string' ? acc.name : undefined,
